@@ -1,3 +1,4 @@
+
 # AccessPoint - Emergency Response Mobile App
 
 A comprehensive React Native (Expo) mobile application featuring authentication, internet connection detection, and optimized performance for emergency response and safety management.
@@ -348,5 +349,4 @@ For issues or questions, please create an issue in the repository.
 ---
 
 **Built with ❤️ using React Native and Expo**
-#   C r a s h P r o j e c t  
- 
+#
