@@ -205,13 +205,6 @@ const Home: React.FC = () => {
           <Text style={styles.greeting}>Hello,</Text>
           <Text style={styles.userName}>{user?.firstName || 'User'}</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.notificationButton}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="notifications-outline" size={28} color="#1a1a1a" />
-          <View style={styles.notificationBadge} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -286,7 +279,7 @@ const Home: React.FC = () => {
                     onPress={() => handleCall(contact.number)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="call" size={16} color="#fff" />
+                    <Ionicons name="call" size={16} color="#ff9999" />
                     <Text style={styles.callButtonText}>Call</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
@@ -310,20 +303,22 @@ const Home: React.FC = () => {
         </View>
       </ScrollView>
 
-      <View style={styles.tabBar}>
+      <View style={styles.tabBarContainer}>
         <TouchableOpacity 
-          style={styles.tabItem}
+          style={[styles.tabItem, activeTab === 'home' && styles.tabItemActive]}
           onPress={() => handleTabChange('home')}
           activeOpacity={0.7}
         >
-          <Ionicons 
-            name={activeTab === 'home' ? 'home' : 'home-outline'} 
-            size={24} 
-            color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
-          />
-          <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
-            Home
-          </Text>
+          <View style={[styles.tabContent, activeTab === 'home' && styles.tabContentActive]}>
+            <Ionicons 
+              name="home-outline" 
+              size={22} 
+              color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
+            />
+            <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
+              Home
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -332,11 +327,11 @@ const Home: React.FC = () => {
           activeOpacity={0.7}
         >
           <Ionicons 
-            name={activeTab === 'report' ? 'document-text' : 'document-text-outline'} 
-            size={24} 
-            color={activeTab === 'report' ? '#ff6b6b' : '#8e8e93'} 
+            name="document-text-outline" 
+            size={22} 
+            color="#8e8e93" 
           />
-          <Text style={[styles.tabLabel, activeTab === 'report' && styles.tabLabelActive]}>
+          <Text style={styles.tabLabel}>
             Report
           </Text>
         </TouchableOpacity>
@@ -347,11 +342,11 @@ const Home: React.FC = () => {
           activeOpacity={0.7}
         >
           <Ionicons 
-            name={activeTab === 'profile' ? 'person' : 'person-outline'} 
-            size={24} 
-            color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
+            name="person-outline" 
+            size={22} 
+            color="#8e8e93" 
           />
-          <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
+          <Text style={styles.tabLabel}>
             Profile
           </Text>
         </TouchableOpacity>

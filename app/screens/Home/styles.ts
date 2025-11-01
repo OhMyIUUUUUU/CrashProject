@@ -53,18 +53,6 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1a1a1a',
   },
-  notificationButton: {
-    position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ff3b30',
-  },
   content: {
     flex: 1,
   },
@@ -210,7 +198,7 @@ export const styles = StyleSheet.create({
   callButton: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#34C759',
+    backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -221,11 +209,13 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   callButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: '#ff9999',
     marginLeft: 4,
   },
   actionButtons: {
@@ -366,24 +356,53 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
-  tabBar: {
+  tabBarContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingBottom: isSmallDevice ? 3 : 5,
-    paddingTop: isSmallDevice ? 8 : 10,
+    borderRadius: 25,
+    paddingHorizontal: isSmallDevice ? 12 : 16,
+    paddingVertical: isSmallDevice ? 10 : 12,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginHorizontal: isSmallDevice ? 15 : 20,
+    marginTop: isSmallDevice ? 15 : 20,
+    marginBottom: isSmallDevice ? 20 : 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: isSmallDevice ? 2 : 0,
+    paddingVertical: isSmallDevice ? 6 : 8,
+  },
+  tabItemActive: {
+    // Container for active state styling
+  },
+  tabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: isSmallDevice ? 12 : 16,
+    paddingVertical: isSmallDevice ? 6 : 8,
+  },
+  tabContentActive: {
+    backgroundColor: '#ff6b6b20',
+    borderRadius: 20,
+    shadowColor: '#ff6b6b',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   tabLabel: {
-    fontSize: isSmallDevice ? 10 : isLargeDevice ? 14 : 12,
+    fontSize: isSmallDevice ? 12 : isLargeDevice ? 15 : 13,
     color: '#8e8e93',
-    marginTop: isSmallDevice ? 2 : 4,
+    fontWeight: '500',
+    marginLeft: 6,
   },
   tabLabelActive: {
     color: '#ff6b6b',
@@ -519,6 +538,7 @@ export const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     justifyContent: isSmallDevice ? 'space-between' : 'flex-start',
+    marginTop: isSmallDevice ? 10 : 12,
   },
   reportTypeCard: {
     backgroundColor: '#fff',
@@ -571,6 +591,7 @@ export const styles = StyleSheet.create({
     maxHeight: screenHeight * 0.3,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    marginTop: isSmallDevice ? 10 : 12,
   },
   input: {
     backgroundColor: '#fff',
@@ -581,6 +602,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e0e0e0',
     minHeight: isSmallDevice ? 45 : 50,
+    marginTop: isSmallDevice ? 10 : 12,
   },
   // Reporter Role Styles
   roleToggleContainer: {

@@ -230,18 +230,18 @@ const Profile: React.FC = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      <View style={styles.tabBar}>
+      <View style={styles.tabBarContainer}>
         <TouchableOpacity 
           style={styles.tabItem}
           onPress={() => handleTabChange('home')}
           activeOpacity={0.7}
         >
           <Ionicons 
-            name={activeTab === 'home' ? 'home' : 'home-outline'} 
-            size={24} 
-            color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
+            name="home-outline" 
+            size={22} 
+            color="#8e8e93" 
           />
-          <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
+          <Text style={styles.tabLabel}>
             Home
           </Text>
         </TouchableOpacity>
@@ -252,28 +252,30 @@ const Profile: React.FC = () => {
           activeOpacity={0.7}
         >
           <Ionicons 
-            name={activeTab === 'report' ? 'document-text' : 'document-text-outline'} 
-            size={24} 
-            color={activeTab === 'report' ? '#ff6b6b' : '#8e8e93'} 
+            name="document-text-outline" 
+            size={22} 
+            color="#8e8e93" 
           />
-          <Text style={[styles.tabLabel, activeTab === 'report' && styles.tabLabelActive]}>
+          <Text style={styles.tabLabel}>
             Report
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.tabItem}
+          style={[styles.tabItem, activeTab === 'profile' && styles.tabItemActive]}
           onPress={() => handleTabChange('profile')}
           activeOpacity={0.7}
         >
-          <Ionicons 
-            name={activeTab === 'profile' ? 'person' : 'person-outline'} 
-            size={24} 
-            color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
-          />
-          <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
-            Profile
-          </Text>
+          <View style={[styles.tabContent, activeTab === 'profile' && styles.tabContentActive]}>
+            <Ionicons 
+              name="person-outline" 
+              size={22} 
+              color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
+            />
+            <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
+              Profile
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
 
