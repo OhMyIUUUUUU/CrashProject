@@ -32,7 +32,7 @@ const cardWidth = getCardWidth();
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
@@ -69,7 +69,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   welcomeCard: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     margin: 20,
     padding: 20,
     borderRadius: 16,
@@ -103,17 +103,17 @@ export const styles = StyleSheet.create({
   addContactButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#007AFF20',
+    backgroundColor: '#ff6b6b20',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: '#ff6b6b',
   },
   addContactButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#007AFF',
+    color: '#ff6b6b',
     marginLeft: 4,
   },
   actionsGrid: {
@@ -203,7 +203,7 @@ export const styles = StyleSheet.create({
   contactNumber: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#007AFF',
+    color: '#ff6b6b',
     marginLeft: 30,
     marginBottom: 10,
   },
@@ -236,7 +236,7 @@ export const styles = StyleSheet.create({
   messageButton: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -318,7 +318,7 @@ export const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -337,7 +337,7 @@ export const styles = StyleSheet.create({
   },
   cancelModalButton: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -351,11 +351,11 @@ export const styles = StyleSheet.create({
   },
   saveContactButton: {
     flex: 1,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#007AFF',
+    shadowColor: '#ff6b6b',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -386,7 +386,7 @@ export const styles = StyleSheet.create({
     marginTop: isSmallDevice ? 2 : 4,
   },
   tabLabelActive: {
-    color: '#007AFF',
+    color: '#ff6b6b',
     fontWeight: '600',
   },
   // Profile Screen Styles
@@ -415,7 +415,7 @@ export const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -437,7 +437,7 @@ export const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
@@ -479,7 +479,7 @@ export const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#007AFF20',
+    backgroundColor: '#ff6b6b20',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -537,7 +537,7 @@ export const styles = StyleSheet.create({
   },
   reportTypeCardActive: {
     borderWidth: 2,
-    borderColor: '#007AFF',
+    borderColor: '#ff6b6b',
     backgroundColor: '#f0f8ff',
   },
   reportTypeIcon: {
@@ -582,6 +582,100 @@ export const styles = StyleSheet.create({
     borderColor: '#e0e0e0',
     minHeight: isSmallDevice ? 45 : 50,
   },
+  // Reporter Role Styles
+  roleToggleContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  roleButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: isSmallDevice ? 14 : 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    minHeight: isSmallDevice ? 48 : 54,
+  },
+  roleButtonActive: {
+    backgroundColor: '#ff6b6b20',
+    borderColor: '#ff6b6b',
+    borderWidth: 2,
+  },
+  roleButtonText: {
+    fontSize: isSmallDevice ? 14 : isLargeDevice ? 18 : 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  roleButtonTextActive: {
+    color: '#ff6b6b',
+    fontWeight: '700',
+  },
+  // Attachments Styles
+  attachButtonsRow: {
+    marginTop: 8,
+  },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: isSmallDevice ? 12 : 14,
+    paddingHorizontal: 16,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+    gap: 8,
+  },
+  attachButtonText: {
+    fontSize: isSmallDevice ? 14 : isLargeDevice ? 16 : 15,
+    fontWeight: '600',
+    color: '#666',
+  },
+  attachPreviewRow: {
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  attachItem: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  attachThumbWrap: {
+    width: isSmallDevice ? 80 : isLargeDevice ? 120 : 100,
+    height: isSmallDevice ? 80 : isLargeDevice ? 120 : 100,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  attachThumb: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  videoThumb: {
+    backgroundColor: '#1a1a1a',
+  },
+  attachRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   // SOS Button Styles
   sosContainer: {
     alignItems: 'center',
@@ -610,7 +704,7 @@ export const styles = StyleSheet.create({
     width: buttonSize * 0.8,
     height: buttonSize * 0.8,
     borderRadius: (buttonSize * 0.8) / 2,
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#ff6b6b',
     justifyContent: 'center',
     alignItems: 'center',
   },

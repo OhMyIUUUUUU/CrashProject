@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#007AFF"
+        "backgroundColor": "#ff6b6b"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

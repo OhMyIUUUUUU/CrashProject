@@ -130,7 +130,7 @@ const Profile: React.FC = () => {
   const InfoRow = useCallback(({ label, value, icon }: { label: string; value: string; icon: string }) => (
     <View style={styles.infoRow}>
       <View style={styles.infoIconContainer}>
-        <Ionicons name={icon as any} size={20} color="#007AFF" />
+        <Ionicons name={icon as any} size={20} color="#ff6b6b" />
       </View>
       <View style={styles.infoContent}>
         <Text style={styles.infoLabel}>{label}</Text>
@@ -239,7 +239,7 @@ const Profile: React.FC = () => {
           <Ionicons 
             name={activeTab === 'home' ? 'home' : 'home-outline'} 
             size={24} 
-            color={activeTab === 'home' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
             Home
@@ -254,7 +254,7 @@ const Profile: React.FC = () => {
           <Ionicons 
             name={activeTab === 'report' ? 'document-text' : 'document-text-outline'} 
             size={24} 
-            color={activeTab === 'report' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'report' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'report' && styles.tabLabelActive]}>
             Report
@@ -269,7 +269,7 @@ const Profile: React.FC = () => {
           <Ionicons 
             name={activeTab === 'profile' ? 'person' : 'person-outline'} 
             size={24} 
-            color={activeTab === 'profile' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
             Profile

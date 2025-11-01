@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Dimensions, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Image, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as ExpoLocation from 'expo-location';
 import LoaderOverlay from '../AccessPoint/components/LoaderOverlay/LoaderOverlay';
 import PrimaryButton from '../AccessPoint/components/PrimaryButton/PrimaryButton';
 import { styles } from './styles';
@@ -16,8 +18,11 @@ const Report: React.FC = () => {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'home' | 'profile' | 'report'>('report');
   const [reportType, setReportType] = useState('');
+  const [reportRole, setReportRole] = useState<'witness' | 'victim' | ''>('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [attachments, setAttachments] = useState<{ uri: string; type: 'image' | 'video' }[]>([]);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Monitor network connectivity
@@ -44,7 +49,7 @@ const Report: React.FC = () => {
   const reportTypes = [
     { id: 'emergency', label: 'Emergency', icon: 'warning', color: '#ff3b30' },
     { id: 'medical', label: 'Medical', icon: 'medkit', color: '#34C759' },
-    { id: 'fire', label: 'Fire', icon: 'flame', color: '#ff9500' },
+    { id: 'fire', label: 'Fire', icon: 'flame', color: '#ff6b6b' },
     { id: 'crime', label: 'Crime', icon: 'alert-circle', color: '#5856d6' },
     { id: 'accident', label: 'Accident', icon: 'car', color: '#ff2d55' },
     { id: 'other', label: 'Other', icon: 'ellipsis-horizontal', color: '#8e8e93' },
@@ -73,14 +78,96 @@ const Report: React.FC = () => {
             text: 'OK',
             onPress: () => {
               setReportType('');
+              setReportRole('');
               setDescription('');
               setLocation('');
+              setAttachments([]);
             },
           },
         ]
       );
     }, 1500);
   }, [reportType, description]);
+
+  const requestMediaPermission = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'We need access to your media library to attach files.');
+      return false;
+    }
+    return true;
+  }, []);
+
+  const pickFile = useCallback(async () => {
+    const ok = await requestMediaPermission();
+    if (!ok) return;
+    
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        quality: 0.8,
+        allowsMultipleSelection: true,
+        videoMaxDuration: 0, // No limit on video duration
+        allowsEditing: false,
+      });
+      
+      if (!result.canceled && result.assets?.length) {
+        const newAttachments = result.assets.map(asset => {
+          // Better video detection - check multiple properties
+          const isVideo = 
+            asset.type === 'video' || 
+            (asset.mimeType && asset.mimeType.toLowerCase().includes('video')) ||
+            (asset.uri && asset.uri.toLowerCase().includes('.mp4')) ||
+            (asset.uri && asset.uri.toLowerCase().includes('.mov')) ||
+            (asset.uri && asset.uri.toLowerCase().includes('.avi')) ||
+            (asset.filename && (
+              asset.filename.toLowerCase().endsWith('.mp4') ||
+              asset.filename.toLowerCase().endsWith('.mov') ||
+              asset.filename.toLowerCase().endsWith('.avi') ||
+              asset.filename.toLowerCase().endsWith('.mkv')
+            ));
+          return { uri: asset.uri, type: isVideo ? 'video' : 'image' };
+        });
+        setAttachments(prev => [...prev, ...newAttachments]);
+      }
+    } catch (error) {
+      console.error('Error picking file:', error);
+      Alert.alert('Error', 'Failed to pick file. Please try again.');
+    }
+  }, [requestMediaPermission]);
+
+  const removeAttachment = useCallback((uri: string) => {
+    setAttachments(prev => prev.filter(a => a.uri !== uri));
+  }, []);
+
+  const autofillLocation = useCallback(async () => {
+    if (fetchingLocation) return;
+    try {
+      setFetchingLocation(true);
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Location permission is needed to auto-fill your location.');
+        return;
+      }
+      const position = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
+      const { latitude, longitude } = position.coords;
+      const places = await ExpoLocation.reverseGeocodeAsync({ latitude, longitude });
+      if (places && places.length > 0) {
+        const p = places[0];
+        const parts = [p.name, p.street, p.district, p.city, p.region, p.postalCode, p.country]
+          .filter(Boolean)
+          .join(', ');
+        setLocation(parts || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      } else {
+        setLocation(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      }
+    } catch (e) {
+      setLocation('');
+      Alert.alert('Error', 'Failed to get current location.');
+    } finally {
+      setFetchingLocation(false);
+    }
+  }, [fetchingLocation]);
 
   const ReportTypeCard = useCallback(({ type }: { type: typeof reportTypes[0] }) => (
     <TouchableOpacity
@@ -98,7 +185,7 @@ const Report: React.FC = () => {
       <Text style={styles.reportTypeLabel} numberOfLines={2}>{type.label}</Text>
       {reportType === type.id && (
         <View style={styles.checkmark}>
-          <Ionicons name="checkmark-circle" size={isSmallDevice ? 18 : 20} color="#007AFF" />
+          <Ionicons name="checkmark-circle" size={isSmallDevice ? 18 : 20} color="#ff6b6b" />
         </View>
       )}
     </TouchableOpacity>
@@ -139,6 +226,26 @@ const Report: React.FC = () => {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reporter Role</Text>
+          <View style={styles.roleToggleContainer}>
+            <TouchableOpacity
+              style={[styles.roleButton, reportRole === 'witness' && styles.roleButtonActive]}
+              onPress={() => setReportRole('witness')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.roleButtonText, reportRole === 'witness' && styles.roleButtonTextActive]}>Witness</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.roleButton, reportRole === 'victim' && styles.roleButtonActive]}
+              onPress={() => setReportRole('victim')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.roleButtonText, reportRole === 'victim' && styles.roleButtonTextActive]}>Victim</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Description</Text>
           <TextInput
             style={styles.textArea}
@@ -153,14 +260,45 @@ const Report: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location (Optional)</Text>
+          <Text style={styles.sectionTitle}>Location</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter location or address"
+            placeholder="Location"
             placeholderTextColor="#999"
             value={location}
             onChangeText={setLocation}
+            onFocus={autofillLocation}
           />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Attachments (Optional)</Text>
+          <View style={styles.attachButtonsRow}>
+            <TouchableOpacity style={styles.attachButton} onPress={pickFile} activeOpacity={0.7}>
+              <Ionicons name="attach" size={18} color="#ff6b6b" />
+              <Text style={styles.attachButtonText}>Image/Video</Text>
+            </TouchableOpacity>
+          </View>
+          {attachments.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachPreviewRow}>
+              {attachments.map(a => (
+                <View key={a.uri} style={styles.attachItem}>
+                  {a.type === 'image' ? (
+                    <View style={styles.attachThumbWrap}>
+                      <Image source={{ uri: a.uri }} style={styles.attachThumb} />
+                    </View>
+                  ) : (
+                    <View style={[styles.attachThumbWrap, styles.videoThumb]}>
+                      <Ionicons name="videocam" size={22} color="#fff" />
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.attachRemove} onPress={() => removeAttachment(a.uri)}>
+                    <Ionicons name="close-circle" size={18} color="#ff3b30" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -182,7 +320,7 @@ const Report: React.FC = () => {
           <Ionicons 
             name={activeTab === 'home' ? 'home' : 'home-outline'} 
             size={24} 
-            color={activeTab === 'home' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
             Home
@@ -197,7 +335,7 @@ const Report: React.FC = () => {
           <Ionicons 
             name={activeTab === 'report' ? 'document-text' : 'document-text-outline'} 
             size={24} 
-            color={activeTab === 'report' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'report' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'report' && styles.tabLabelActive]}>
             Report
@@ -212,7 +350,7 @@ const Report: React.FC = () => {
           <Ionicons 
             name={activeTab === 'profile' ? 'person' : 'person-outline'} 
             size={24} 
-            color={activeTab === 'profile' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
             Profile

@@ -11,7 +11,7 @@ const LoaderOverlay: React.FC<LoaderOverlayProps> = React.memo(({ visible, messa
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.container}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#ff6b6b" />
           {message && <Text style={styles.message}>{message}</Text>}
         </View>
       </View>

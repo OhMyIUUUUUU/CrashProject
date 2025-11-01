@@ -259,7 +259,7 @@ const Home: React.FC = () => {
               onPress={handleAddContact}
               activeOpacity={0.7}
             >
-              <Ionicons name="add" size={20} color="#007AFF" />
+              <Ionicons name="add" size={20} color="#ff6b6b" />
               <Text style={styles.addContactButtonText}>Add</Text>
             </TouchableOpacity>
           </View>
@@ -269,7 +269,7 @@ const Home: React.FC = () => {
             emergencyContacts.map((contact) => (
               <View key={contact.id} style={styles.contactCard}>
                 <View style={styles.contactHeader}>
-                  <Ionicons name="person" size={20} color="#007AFF" />
+                  <Ionicons name="person" size={20} color="#ff6b6b" />
                   <Text style={styles.contactName}>{contact.name}</Text>
                   <TouchableOpacity 
                     style={styles.deleteButton}
@@ -319,7 +319,7 @@ const Home: React.FC = () => {
           <Ionicons 
             name={activeTab === 'home' ? 'home' : 'home-outline'} 
             size={24} 
-            color={activeTab === 'home' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
             Home
@@ -334,7 +334,7 @@ const Home: React.FC = () => {
           <Ionicons 
             name={activeTab === 'report' ? 'document-text' : 'document-text-outline'} 
             size={24} 
-            color={activeTab === 'report' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'report' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'report' && styles.tabLabelActive]}>
             Report
@@ -349,7 +349,7 @@ const Home: React.FC = () => {
           <Ionicons 
             name={activeTab === 'profile' ? 'person' : 'person-outline'} 
             size={24} 
-            color={activeTab === 'profile' ? '#007AFF' : '#8e8e93'} 
+            color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
           />
           <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
             Profile

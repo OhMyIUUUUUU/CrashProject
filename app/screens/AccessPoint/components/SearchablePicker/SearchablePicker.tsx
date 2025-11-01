@@ -55,7 +55,7 @@ const SearchablePicker: React.FC<SearchablePickerProps> = React.memo(({
         {item}
       </Text>
       {value === item && (
-        <Ionicons name="checkmark-circle" size={18} color="#007AFF" />
+        <Ionicons name="checkmark-circle" size={18} color="#ff6b6b" />
       )}
     </TouchableOpacity>
   ), [value, handleSelect]);
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
     borderColor: '#ff3b30',
   },
   pickerButtonOpen: {
-    borderColor: '#007AFF',
+    borderColor: '#ff6b6b',
   },
   pickerButtonText: {
     fontSize: 16,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   selectedItem: {
-    backgroundColor: '#007AFF10',
+    backgroundColor: '#ff6b6b10',
   },
   itemText: {
     fontSize: 16,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   selectedItemText: {
-    color: '#007AFF',
+    color: '#ff6b6b',
     fontWeight: '600',
   },
   emptyContainer: {

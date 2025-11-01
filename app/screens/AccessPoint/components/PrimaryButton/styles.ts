@@ -3,12 +3,12 @@ import { StyleSheet } from 'react-native';
 export const styles = StyleSheet.create({
   button: {
     height: 54,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 8,
-    shadowColor: '#007AFF',
+    shadowColor: '#ff6b6b',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
   buttonOutline: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#007AFF',
+    borderColor: '#ff6b6b',
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -39,7 +39,7 @@ export const styles = StyleSheet.create({
     color: '#fff',
   },
   buttonTextOutline: {
-    color: '#007AFF',
+    color: '#ff6b6b',
   },
 });
 
