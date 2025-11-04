@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
-import { Picker } from '@react-native-picker/picker';
+// import { Picker } from '@react-native-picker/picker';
 import barangay from 'barangay';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../contexts/AuthContext';
-import { UserData } from '../../../utils/storage';
+import { UserData, StorageService } from '../../../utils/storage';
 import { ValidationRules } from '../../../utils/validation';
 import AuthHeader from '../components/AuthHeader/AuthHeader';
 import ErrorText from '../components/ErrorText/ErrorText';
@@ -97,9 +97,16 @@ const Register: React.FC = () => {
 
   // Get cities based on selected region
   const cities = useMemo(() => {
-    if (!formData.region || provinces.length === 0) return [];
+    if (!formData.region) return [];
     try {
-      // Get all cities from all provinces in the region
+      // Some regions (like NCR) have no provinces in the dataset.
+      if (provinces.length === 0) {
+        const cityData = barangay(formData.region);
+        console.log('Direct cities for', formData.region, ':', cityData);
+        return Array.isArray(cityData) ? cityData : [];
+      }
+
+      // Otherwise, aggregate cities across provinces
       const allCities: string[] = [];
       for (const province of provinces) {
         try {
@@ -121,15 +128,21 @@ const Register: React.FC = () => {
 
   // Get barangays based on selected city
   const barangays = useMemo(() => {
-    if (!formData.region || !formData.city || provinces.length === 0) return [];
+    if (!formData.region || !formData.city) return [];
     try {
-      // Find which province contains this city
+      // If there are no provinces (e.g., NCR), fetch barangays directly by region + city
+      if (provinces.length === 0) {
+        const brgys = barangay(formData.region, formData.city);
+        console.log('Direct barangays for', formData.city, ':', Array.isArray(brgys) ? brgys.slice(0, 5) : brgys);
+        return Array.isArray(brgys) ? brgys : [];
+      }
+
+      // Otherwise, find the province that contains this city
       let barangayData: string[] = [];
       for (const province of provinces) {
         try {
           const cityData = barangay(formData.region, province);
           if (Array.isArray(cityData) && cityData.includes(formData.city)) {
-            // Found the province that contains this city
             barangayData = barangay(formData.region, province, formData.city);
             break;
           }
@@ -232,6 +245,16 @@ const Register: React.FC = () => {
       const success = await register(userData);
       
       if (success) {
+        // Ensure emergency contact shows on Home by saving it to contacts list
+        if (formData.emergencyContactName && formData.emergencyContactNumber) {
+          try {
+            await StorageService.addEmergencyContact({
+              id: Date.now().toString(),
+              name: formData.emergencyContactName.trim(),
+              number: formData.emergencyContactNumber.trim(),
+            });
+          } catch {}
+        }
         router.replace('/screens/Home/Home');
       } else {
         setErrors({ general: 'User with this email or phone already exists.' });
@@ -318,20 +341,15 @@ const Register: React.FC = () => {
             
             <View style={styles.row}>
               <View style={styles.halfWidth}>
-                <Text style={styles.label}>Gender</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={formData.gender}
-                    onValueChange={(value) => updateFormData('gender', value)}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Gender" value="" />
-                    <Picker.Item label="Male" value="male" />
-                    <Picker.Item label="Female" value="female" />
-                    <Picker.Item label="Other" value="other" />
-                  </Picker>
-                </View>
-                {errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
+                <SearchablePicker
+                  label="Gender"
+                  placeholder="Select Gender"
+                  value={formData.gender}
+                  data={["male", "female", "other"]}
+                  onValueChange={(value) => updateFormData('gender', value)}
+                  enabled={true}
+                  error={errors.gender}
+                />
               </View>
               <View style={styles.halfWidth}>
                 <InputField

@@ -28,7 +28,7 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = React.memo(({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? '#007AFF' : '#fff'} />
+        <ActivityIndicator color={variant === 'outline' ? '#ff6b6b' : '#fff'} />
       ) : (
         <Text
           style={[

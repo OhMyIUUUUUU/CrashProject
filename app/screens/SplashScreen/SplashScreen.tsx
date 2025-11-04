@@ -83,13 +83,13 @@ const SplashScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <View style={styles.logoContainer}>
-          <Ionicons name="shield-checkmark" size={80} color="#007AFF" />
+          <Ionicons name="shield-checkmark" size={80} color="#ff6b6b" />
         </View>
         <Text style={styles.title}>AccessPoint</Text>
         <Text style={styles.subtitle}>Emergency Response System</Text>
         
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#ff6b6b" />
           <Text style={styles.status}>{status}</Text>
         </View>
       </View>
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: '#007AFF20',
+    backgroundColor: '#ff6b6b20',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 30,

@@ -7,15 +7,18 @@ export const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 0,
     paddingBottom: 30,
+    justifyContent: 'center',
   },
   form: {
     marginTop: 20,
+    width: '100%',
   },
   footer: {
     flexDirection: 'row',
@@ -29,7 +32,7 @@ export const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#ff6b6b',
     fontWeight: '600',
   },
 });

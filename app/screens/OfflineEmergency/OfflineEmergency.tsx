@@ -124,6 +124,21 @@ const OfflineEmergency: React.FC = () => {
         showsVerticalScrollIndicator={false}
       >
 
+        <View style={styles.noticeCard}>
+          <Text style={styles.noticeTitle}>No Internet Connection Detected</Text>
+          <Text style={styles.noticeDescription}>You can still contact emergency hotlines.</Text>
+          <View style={styles.noticeActions}>
+            <TouchableOpacity
+              style={[styles.noticeButton, styles.noticeSmsButton]}
+              onPress={() => handleSMS('911', 'Emergency! I need help. Please assist.')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chatbubble" size={18} color="#fff" />
+              <Text style={styles.noticeButtonText}>Send SMS to 911</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.sosContainer}>
           <Animated.View
             style={[
@@ -156,7 +171,7 @@ const OfflineEmergency: React.FC = () => {
             <Text style={styles.sectionTitle}>Your Emergency Contact</Text>
             <View style={styles.personalContactCard}>
               <View style={styles.personalContactHeader}>
-                <Ionicons name="person-circle" size={40} color="#007AFF" />
+                <Ionicons name="person-circle" size={40} color="#ff6b6b" />
                 <View style={styles.personalContactInfo}>
                   <Text style={styles.personalContactName}>{user.emergencyContactName}</Text>
                   <Text style={styles.personalContactNumber}>{user.emergencyContactNumber}</Text>
@@ -229,7 +244,10 @@ const OfflineEmergency: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
+  },
+  content: {
+    flex: 1,
   },
   header: {
     paddingHorizontal: 20,
@@ -237,6 +255,51 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+  },
+  noticeCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  noticeTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  noticeDescription: {
+    marginTop: 6,
+    fontSize: 14,
+    color: '#555',
+  },
+  noticeActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  noticeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  noticeSmsButton: {
+    backgroundColor: '#ff6b6b',
+  },
+  noticeCallButton: {
+    backgroundColor: '#34C759',
+  },
+  noticeButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   offlineIndicator: {
     flexDirection: 'row',
@@ -248,9 +311,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ff3b30',
     marginLeft: 8,
-  },
-  content: {
-    flex: 1,
   },
   section: {
     paddingHorizontal: 20,
@@ -294,7 +354,7 @@ const styles = StyleSheet.create({
   },
   personalContactNumber: {
     fontSize: 16,
-    color: '#007AFF',
+    color: '#ff6b6b',
   },
   personalContactActions: {
     flexDirection: 'row',
@@ -310,7 +370,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   smsActionButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ff6b6b',
   },
   personalActionText: {
     fontSize: 16,
@@ -397,7 +457,7 @@ const styles = StyleSheet.create({
     width: buttonSize * 0.8,
     height: buttonSize * 0.8,
     borderRadius: (buttonSize * 0.8) / 2,
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#ff6b6b',
     justifyContent: 'center',
     alignItems: 'center',
   },

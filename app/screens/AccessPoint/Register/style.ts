@@ -40,7 +40,7 @@ export const styles = StyleSheet.create({
   },
   pickerContainer: {
     backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     marginBottom: 16,
@@ -68,7 +68,7 @@ export const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#ff6b6b',
     fontWeight: '600',
   },
 });
