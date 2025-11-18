@@ -2,45 +2,57 @@ import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    color: '#1a1a1a',
+    marginBottom: 10,
+    letterSpacing: 0.2,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e9ecef',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputContainerError: {
     borderColor: '#ff3b30',
+    backgroundColor: '#fff5f5',
   },
   iconContainer: {
-    paddingLeft: 15,
-    paddingRight: 10,
+    paddingLeft: 18,
+    paddingRight: 12,
   },
   input: {
     flex: 1,
-    height: 50,
-    paddingHorizontal: 15,
+    height: 56,
+    paddingHorizontal: 16,
     fontSize: 16,
     color: '#1a1a1a',
+    fontWeight: '400',
   },
   inputWithIcon: {
     paddingLeft: 0,
   },
   error: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#ff3b30',
-    marginTop: 5,
-    marginLeft: 5,
+    marginTop: 8,
+    marginLeft: 4,
+    fontWeight: '500',
   },
 });
 

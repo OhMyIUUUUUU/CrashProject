@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 16.24.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "image": "ubuntu-22.04-jdk-11-ndk-r23b"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "image": "ubuntu-22.04-jdk-11-ndk-r23b"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "image": "ubuntu-22.04-jdk-11-ndk-r23b"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

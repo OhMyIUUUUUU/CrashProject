@@ -1,438 +1,473 @@
 import { Ionicons } from '@expo/vector-icons';
-import NetInfo from '@react-native-community/netinfo';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Linking, Modal, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-import { EmergencyContact, StorageService } from '../../utils/storage';
+import CustomTabBar from '../../components/CustomTabBar';
 import { styles } from './styles';
+
+interface EmergencyContact {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+}
+
+const { width: screenWidth } = Dimensions.get('window');
+const sosButtonSize = Math.min(screenWidth * 0.5, 200);
 
 const Home: React.FC = () => {
   const router = useRouter();
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'home' | 'profile' | 'report'>('home');
-  const [alertSent, setAlertSent] = useState(false);
-  const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [contactName, setContactName] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
+  const { user, loadUser } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
   
-  // Animation values
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  // Animation refs for ripple effect
+  const ripple1 = useRef(new Animated.Value(1)).current;
+  const ripple2 = useRef(new Animated.Value(1)).current;
+  const ripple3 = useRef(new Animated.Value(1)).current;
 
-  // Load emergency contacts from storage on component mount
   useEffect(() => {
-    const loadEmergencyContacts = async () => {
-      try {
-        const contacts = await StorageService.getEmergencyContacts();
-        setEmergencyContacts(contacts);
-      } catch (error) {
-        console.error('Error loading emergency contacts:', error);
+    // Load user data if not already loaded
+    const loadUserData = async () => {
+      if (!user) {
+        await loadUser();
+        // Wait a moment for state to update
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
+      setIsLoading(false);
+    };
+    
+    loadUserData();
+    // Load recent activity from storage if needed
+    // For now, it will show "No recent activity"
+  }, [user, loadUser]);
+
+  useEffect(() => {
+    // Initialize with primary emergency contact if available
+    if (user?.emergencyContactName && user?.emergencyContactNumber) {
+      const primaryContact: EmergencyContact = {
+        id: 'primary',
+        name: user.emergencyContactName,
+        phone: user.emergencyContactNumber,
+        email: user.email || '',
+      };
+      setEmergencyContacts([primaryContact]);
+    }
+  }, [user]);
+
+  // Ripple animation effect
+  useEffect(() => {
+    const createRipple = (animValue: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animValue, {
+            toValue: 1.5,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
     };
 
-    loadEmergencyContacts();
-  }, []);
+    const ripple1Anim = createRipple(ripple1, 0);
+    const ripple2Anim = createRipple(ripple2, 400);
+    const ripple3Anim = createRipple(ripple3, 800);
 
-  // Monitor network connectivity
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (!state.isConnected) {
-        // If connection is lost, redirect to offline emergency screen
-        router.replace('/screens/OfflineEmergency/OfflineEmergency');
-      }
+    ripple1Anim.start();
+    ripple2Anim.start();
+    ripple3Anim.start();
+
+    return () => {
+      ripple1Anim.stop();
+      ripple2Anim.stop();
+      ripple3Anim.stop();
+    };
+  }, [ripple1, ripple2, ripple3]);
+
+  const handleSOS = () => {
+    // Navigate to report screen with emergency type
+    router.push({
+      pathname: '/screens/Home/Report',
+      params: { type: 'emergency' },
     });
+  };
 
-    return () => unsubscribe();
-  }, [router]);
+  const handleCall = (phoneNumber: string) => {
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
 
-  // Pulsing animation effect
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [pulseAnim]);
+  const handleMessage = (phoneNumber: string) => {
+    Linking.openURL(`sms:${phoneNumber}`);
+  };
 
-  const handleTabChange = useCallback((tab: 'home' | 'profile' | 'report') => {
-    setActiveTab(tab);
-    if (tab === 'profile') {
-      router.push('/screens/Home/Profile');
-    } else if (tab === 'report') {
-      router.push('/screens/Home/Report');
-    }
-  }, [router]);
+  const handleAddContact = () => {
+    setShowAddModal(true);
+  };
 
-  const handleSOSPressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.95,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
-  const handleSOSPressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 3,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
-  const handleCall = useCallback(async (number: string) => {
-    try {
-      console.log(`Opening phone dialer with: ${number}`);
-      await Linking.openURL(`tel:${number}`);
-      console.log('Phone dialer opened successfully');
-    } catch (error) {
-      console.error('Error opening phone dialer:', error);
-      Alert.alert('Error', 'Failed to open phone dialer');
-    }
-  }, []);
-
-  const handleMessage = useCallback(async (number: string) => {
-    try {
-      const predefinedMessage = 'Emergency! I need help. Please call me back immediately.';
-      const canSMS = await Linking.canOpenURL(`sms:${number}`);
-      if (canSMS) {
-        await Linking.openURL(`sms:${number}?body=${encodeURIComponent(predefinedMessage)}`);
-      } else {
-        Alert.alert('Error', 'Unable to send SMS on this device');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to open SMS app');
-    }
-  }, []);
-
-  const handleAddContact = useCallback(() => {
-    setShowAddContactModal(true);
-    setContactName('');
-    setContactNumber('');
-  }, []);
-
-  const handleSaveContact = useCallback(async () => {
-    if (!contactName.trim() || !contactNumber.trim()) {
-      Alert.alert('Error', 'Please fill in both name and number');
+  const handleSaveContact = () => {
+    if (!newContactName.trim()) {
+      Alert.alert('Error', 'Please enter a name');
       return;
     }
+
+    if (!newContactPhone.trim()) {
+      Alert.alert('Error', 'Please enter a phone number');
+      return;
+    }
+
+    const newContact: EmergencyContact = {
+      id: Date.now().toString(),
+      name: newContactName.trim(),
+      phone: newContactPhone.trim(),
+      email: newContactEmail.trim(),
+    };
     
-    try {
-      // Add contact to the emergency contacts list
-      const newContact: EmergencyContact = {
-        id: Date.now().toString(),
-        name: contactName.trim(),
-        number: contactNumber.trim()
-      };
-      
-      // Save to local storage
-      await StorageService.addEmergencyContact(newContact);
-      
-      // Update local state
-      setEmergencyContacts(prev => [...prev, newContact]);
-      
-      console.log('Saving contact:', newContact);
-      Alert.alert('Success', 'Emergency contact added successfully!');
-      setShowAddContactModal(false);
-      setContactName('');
-      setContactNumber('');
-    } catch (error) {
-      console.error('Error saving contact:', error);
-      Alert.alert('Error', 'Failed to save emergency contact');
+    setEmergencyContacts([...emergencyContacts, newContact]);
+    
+    // Reset form
+    setNewContactName('');
+    setNewContactPhone('');
+    setNewContactEmail('');
+    setShowAddModal(false);
+    
+    // Scroll to bottom after a short delay to ensure the new contact is rendered
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  const handleCancelAdd = () => {
+    setNewContactName('');
+    setNewContactPhone('');
+    setNewContactEmail('');
+    setShowAddModal(false);
+  };
+
+  const handleUpdateContact = (id: string, field: 'name' | 'phone' | 'email', value: string) => {
+    setEmergencyContacts(emergencyContacts.map(contact => 
+      contact.id === id ? { ...contact, [field]: value } : contact
+    ));
+  };
+
+  const handleDeleteContact = (id: string) => {
+    if (id === 'primary') {
+      // Don't allow deleting primary contact
+      return;
     }
-  }, [contactName, contactNumber]);
+    setEmergencyContacts(emergencyContacts.filter(contact => contact.id !== id));
+  };
 
-  const handleCancelAddContact = useCallback(() => {
-    setShowAddContactModal(false);
-    setContactName('');
-    setContactNumber('');
-  }, []);
+  const getInitials = () => {
+    if (!user) return 'U';
+    const first = user.firstName?.[0] || '';
+    const last = user.lastName?.[0] || '';
+    return (first + last).toUpperCase() || 'U';
+  };
 
-  const handleDeleteContact = useCallback((contactId: string) => {
-    Alert.alert(
-      'Delete Contact',
-      'Are you sure you want to delete this emergency contact?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete from local storage
-              await StorageService.deleteEmergencyContact(contactId);
-              
-              // Update local state
-              setEmergencyContacts(prev => prev.filter(contact => contact.id !== contactId));
-            } catch (error) {
-              console.error('Error deleting contact:', error);
-              Alert.alert('Error', 'Failed to delete emergency contact');
-            }
-          }
-        }
-      ]
+  // Show loading only briefly, then render even if user data is incomplete
+  if (isLoading) {
+    return (
+      <View style={styles.gradientContainer}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: '#FF6B6B', fontSize: 16 }}>Loading...</Text>
+        </View>
+      </View>
     );
-  }, []);
-
-  const handleSOSPress = useCallback(async () => {
-    try {
-      console.log('Opening phone dialer with 911...');
-      await Linking.openURL('tel:911');
-      console.log('Phone dialer opened successfully');
-    } catch (error) {
-      console.error('Error opening phone dialer:', error);
-      Alert.alert('Error', 'Failed to open phone dialer');
-    }
-  }, []);
-
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Hello,</Text>
-          <Text style={styles.userName}>{user?.firstName || 'User'}</Text>
-        </View>
-      </View>
-
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeTitle}>Welcome to AccessPoint</Text>
-          <Text style={styles.welcomeSubtitle}>
-            Your safety and emergency response system
-          </Text>
-        </View>
-
-        <View style={styles.sosContainer}>
-          <Animated.View
-            style={[
-              styles.sosButtonWrapper,
-              {
-                transform: [
-                  { scale: Animated.multiply(pulseAnim, scaleAnim) }
-                ],
-              },
-            ]}
+    <View style={styles.gradientContainer}>
+        <View style={styles.container}>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            <TouchableOpacity
-              onPress={handleSOSPress}
-              onPressIn={handleSOSPressIn}
-              onPressOut={handleSOSPressOut}
-              activeOpacity={1}
-              style={styles.sosButton}
-            >
-              <View style={styles.sosButtonInner}>
-                <Text style={styles.sosText}>SOS</Text>
-                <Text style={styles.sosSubtext}>Press & hold</Text>
+          {/* Welcome Card */}
+          <View style={styles.welcomeCard}>
+            <View style={styles.welcomeHeader}>
+              <View style={styles.avatarContainer}>
+                <Text style={styles.avatarText}>{getInitials()}</Text>
               </View>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Emergency Contacts</Text>
-            <TouchableOpacity 
-              style={styles.addContactButton}
-              onPress={handleAddContact}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add" size={20} color="#ff6b6b" />
-              <Text style={styles.addContactButtonText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {/* Emergency Contacts List */}
-          {emergencyContacts.length > 0 ? (
-            emergencyContacts.map((contact) => (
-              <View key={contact.id} style={styles.contactCard}>
-                <View style={styles.contactHeader}>
-                  <Ionicons name="person" size={20} color="#ff6b6b" />
-                  <Text style={styles.contactName}>{contact.name}</Text>
-                  <TouchableOpacity 
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteContact(contact.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#ff3b30" />
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.contactNumber}>{contact.number}</Text>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity 
-                    style={styles.callButton}
-                    onPress={() => handleCall(contact.number)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="call" size={16} color="#ff9999" />
-                    <Text style={styles.callButtonText}>Call</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.messageButton}
-                    onPress={() => handleMessage(contact.number)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="chatbubble" size={16} color="#fff" />
-                    <Text style={styles.messageButtonText}>Message</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.welcomeTextContainer}>
+                <Text style={styles.welcomeTitle}>
+                  Welcome{user?.firstName ? `, ${user.firstName}` : ''}!
+                </Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Your Emergency Response System
+                </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.noContactCard}>
-              <Ionicons name="person-add" size={32} color="#8e8e93" />
-              <Text style={styles.noContactText}>No emergency contacts</Text>
-              <Text style={styles.noContactSubtext}>Tap "Add" to add your first emergency contact</Text>
             </View>
-          )}
-        </View>
-      </ScrollView>
+          </View>
 
-      <View style={styles.tabBarContainer}>
-        <TouchableOpacity 
-          style={[styles.tabItem, activeTab === 'home' && styles.tabItemActive]}
-          onPress={() => handleTabChange('home')}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.tabContent, activeTab === 'home' && styles.tabContentActive]}>
-            <Ionicons 
-              name="home-outline" 
-              size={22} 
-              color={activeTab === 'home' ? '#ff6b6b' : '#8e8e93'} 
+          {/* SOS Button */}
+          <View style={[styles.sosButtonContainer, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
+            {/* Ripple effects */}
+            <Animated.View
+              style={[
+                styles.ripple,
+                {
+                  width: sosButtonSize,
+                  height: sosButtonSize,
+                  borderRadius: sosButtonSize / 2,
+                  transform: [{ scale: ripple1 }],
+                  opacity: ripple1.interpolate({
+                    inputRange: [1, 1.5],
+                    outputRange: [0.4, 0],
+                  }),
+                },
+              ]}
             />
-            <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>
-              Home
-            </Text>
+            <Animated.View
+              style={[
+                styles.ripple,
+                {
+                  width: sosButtonSize,
+                  height: sosButtonSize,
+                  borderRadius: sosButtonSize / 2,
+                  transform: [{ scale: ripple2 }],
+                  opacity: ripple2.interpolate({
+                    inputRange: [1, 1.5],
+                    outputRange: [0.4, 0],
+                  }),
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.ripple,
+                {
+                  width: sosButtonSize,
+                  height: sosButtonSize,
+                  borderRadius: sosButtonSize / 2,
+                  transform: [{ scale: ripple3 }],
+                  opacity: ripple3.interpolate({
+                    inputRange: [1, 1.5],
+                    outputRange: [0.4, 0],
+                  }),
+                },
+              ]}
+            />
+            
+            {/* SOS Button */}
+            <TouchableOpacity
+              style={[styles.sosButton, { width: sosButtonSize, height: sosButtonSize, borderRadius: sosButtonSize / 2 }]}
+              onPress={handleSOS}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#FF3B30', '#FF6B6B', '#FF8787']}
+                style={[styles.sosButtonGradient, { width: sosButtonSize, height: sosButtonSize, borderRadius: sosButtonSize / 2 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.sosButtonContent}>
+                  <Text style={[styles.sosButtonText, { fontSize: sosButtonSize * 0.25 }]}>SOS</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.tabItem}
-          onPress={() => handleTabChange('report')}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name="document-text-outline" 
-            size={22} 
-            color="#8e8e93" 
-          />
-          <Text style={styles.tabLabel}>
-            Report
-          </Text>
-        </TouchableOpacity>
+          {/* Emergency Contact */}
+          <View style={[styles.section, styles.emergencyContactSection]}>
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>Emergency Contact</Text>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={handleAddContact}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add-circle" size={24} color="#FF6B6B" />
+              </TouchableOpacity>
+            </View>
+            
+            {emergencyContacts.length > 0 ? (
+              emergencyContacts.map((contact) => (
+                <View key={contact.id} style={styles.contactCard}>
+                  <View style={styles.contactHeader}>
+                    <LinearGradient
+                      colors={['#FFE5E5', '#FFD5D5']}
+                      style={styles.contactAvatarContainer}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="person" size={32} color="#FF6B6B" />
+                    </LinearGradient>
+                    <View style={styles.contactInfo}>
+                      <TextInput
+                        style={styles.contactNameInput}
+                        placeholder="Name"
+                        value={contact.name}
+                        onChangeText={(value) => handleUpdateContact(contact.id, 'name', value)}
+                        placeholderTextColor="#999"
+                      />
+                      <TextInput
+                        style={styles.contactDetailInput}
+                        placeholder="Phone Number"
+                        value={contact.phone}
+                        onChangeText={(value) => handleUpdateContact(contact.id, 'phone', value)}
+                        keyboardType="phone-pad"
+                        placeholderTextColor="#999"
+                      />
+                      <TextInput
+                        style={styles.contactDetailInput}
+                        placeholder="Email"
+                        value={contact.email}
+                        onChangeText={(value) => handleUpdateContact(contact.id, 'email', value)}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        placeholderTextColor="#999"
+                      />
+                    </View>
+                    {contact.id !== 'primary' && (
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => handleDeleteContact(contact.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="close" size={20} color="#999" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.contactActionButtons}>
+                    <TouchableOpacity
+                      style={[styles.callButton, !contact.phone && styles.disabledButton]}
+                      onPress={() => contact.phone && handleCall(contact.phone)}
+                      activeOpacity={0.8}
+                      disabled={!contact.phone}
+                    >
+                      <LinearGradient
+                        colors={['#FF6B6B', '#FF5252']}
+                        style={StyleSheet.absoluteFill}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                      />
+                      <Text style={styles.callButtonText}>Call</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.messageButton, !contact.phone && styles.disabledButton]}
+                      onPress={() => contact.phone && handleMessage(contact.phone)}
+                      activeOpacity={0.7}
+                      disabled={!contact.phone}
+                    >
+                      <Text style={styles.messageButtonText}>Message</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.contactCard}>
+                <Text style={styles.noContactText}>No emergency contacts. Tap the + icon to add one.</Text>
+              </View>
+            )}
+          </View>
 
-        <TouchableOpacity 
-          style={styles.tabItem}
-          onPress={() => handleTabChange('profile')}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name="person-outline" 
-            size={22} 
-            color="#8e8e93" 
-          />
-          <Text style={styles.tabLabel}>
-            Profile
-          </Text>
-        </TouchableOpacity>
+          {/* Add Emergency Contact Modal */}
+          <Modal
+            visible={showAddModal}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={handleCancelAdd}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Add Emergency Contact</Text>
+                  <TouchableOpacity
+                    onPress={handleCancelAdd}
+                    style={styles.modalCloseButton}
+                  >
+                    <Ionicons name="close" size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Name *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter contact name"
+                      value={newContactName}
+                      onChangeText={setNewContactName}
+                      placeholderTextColor="#999"
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Phone Number *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter phone number"
+                      value={newContactPhone}
+                      onChangeText={setNewContactPhone}
+                      keyboardType="phone-pad"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Email</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter email address"
+                      value={newContactEmail}
+                      onChangeText={setNewContactEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  <View style={styles.modalButtonContainer}>
+                    <TouchableOpacity
+                      style={styles.modalCancelButton}
+                      onPress={handleCancelAdd}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.modalSaveButton}
+                      onPress={handleSaveContact}
+                      activeOpacity={0.8}
+                    >
+                      <LinearGradient
+                        colors={['#FF6B6B', '#FF5252']}
+                        style={styles.modalSaveButtonGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                      >
+                        <Text style={styles.modalSaveButtonText}>Save</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        </ScrollView>
+
+        {/* Bottom Navigation */}
+        <CustomTabBar />
       </View>
-
-      {/* Alert Sent Confirmation Modal */}
-      <Modal
-        visible={alertSent}
-        transparent={true}
-        animationType="fade"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.confirmationContainer}>
-            <Ionicons name="checkmark-circle" size={80} color="#34C759" />
-            <Text style={styles.confirmationTitle}>Alert Sent!</Text>
-            <Text style={styles.confirmationSubtitle}>Emergency services have been notified</Text>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Contact Modal */}
-      <Modal
-        visible={showAddContactModal}
-        transparent={true}
-        animationType="slide"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.addContactModalContainer}>
-            <View style={styles.addContactModalHeader}>
-              <Text style={styles.addContactModalTitle}>Add Emergency Contact</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={handleCancelAddContact}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={24} color="#8e8e93" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.addContactForm}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Contact Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={contactName}
-                  onChangeText={setContactName}
-                  placeholder="Enter contact name"
-                  placeholderTextColor="#8e8e93"
-                  autoCapitalize="words"
-                />
-              </View>
-              
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Phone Number</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={contactNumber}
-                  onChangeText={setContactNumber}
-                  placeholder="Enter phone number"
-                  placeholderTextColor="#8e8e93"
-                  keyboardType="phone-pad"
-                />
-              </View>
-            </View>
-            
-            <View style={styles.addContactModalActions}>
-              <TouchableOpacity 
-                style={styles.cancelModalButton}
-                onPress={handleCancelAddContact}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelModalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveContactButton}
-                onPress={handleSaveContact}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.saveContactButtonText}>Save Contact</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 export default Home;
+

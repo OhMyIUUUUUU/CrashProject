@@ -1,151 +1,215 @@
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { supabase } from '../../../lib/supabase';
+import { StorageService, UserData } from '../../../utils/storage';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ValidationRules } from '../../../utils/validation';
-import AuthHeader from '../components/AuthHeader/AuthHeader';
-import ErrorText from '../components/ErrorText/ErrorText';
-import InputField from '../components/InputField/InputField';
-import LoaderOverlay from '../components/LoaderOverlay/LoaderOverlay';
-import PrimaryButton from '../components/PrimaryButton/PrimaryButton';
 import { styles } from './styles';
 
-const Login: React.FC = () => {
+export default function Login() {
   const router = useRouter();
-  const { login } = useAuth();
-  
-  const [emailOrPhone, setEmailOrPhone] = useState('');
+  const { loadUser } = useAuth();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<{ emailOrPhone?: string; password?: string; general?: string }>({});
   const [loading, setLoading] = useState(false);
 
   // Monitor network connectivity
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
-      if (!state.isConnected) {
-        // If connection is lost, redirect to offline emergency screen
-        router.replace('/screens/OfflineEmergency/OfflineEmergency');
+      if (state.isConnected === false) {
+        Alert.alert('Connection Lost', 'You are currently offline.');
       }
     });
 
     return () => unsubscribe();
-  }, [router]);
-
-  const validateForm = useCallback((): boolean => {
-    const newErrors: typeof errors = {};
-    
-    if (!emailOrPhone.trim()) {
-      newErrors.emailOrPhone = 'Email or Phone is required';
-    }
-    
-    const passwordError = ValidationRules.password(password);
-    if (passwordError) {
-      newErrors.password = passwordError;
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [emailOrPhone, password]);
-
-  const handleLogin = useCallback(async () => {
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    setErrors({});
-    
-    try {
-      const success = await login(emailOrPhone.trim(), password);
-      
-      if (success) {
-        router.replace('/screens/Home/Home');
-      } else {
-        setErrors({ general: 'Invalid credentials. Please check your email/phone and password.' });
-      }
-    } catch (error) {
-      setErrors({ general: 'An error occurred. Please try again.' });
-    } finally {
-      setLoading(false);
-    }
-  }, [emailOrPhone, password, login, router, validateForm]);
-
-  const handleGoToSignup = useCallback(() => {
-    router.push('/screens/AccessPoint/Register/Register');
-  }, [router]);
-
-  const togglePasswordVisibility = useCallback(() => {
-    setShowPassword(prev => !prev);
   }, []);
 
+  // Handle Login
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      // --- LOGIN LOGIC ---
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        Alert.alert('Login Failed', error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (authData.session && authData.user) {
+        // Fetch user data from database
+        const { data: userData, error: dbError } = await supabase
+          .from('tbl_users')
+          .select('*')
+          .eq('email', email)
+          .single();
+
+        if (dbError) {
+          console.error('Error fetching user data:', dbError);
+          // Still proceed with login even if we can't fetch full profile
+        }
+
+        // Convert database user data to UserData format
+        const userDataForStorage: UserData = {
+          email: userData?.email || email,
+          phone: userData?.phone || '',
+          firstName: userData?.first_name || '',
+          lastName: userData?.last_name || '',
+          gender: userData?.sex || '',
+          birthdate: userData?.birthdate || '',
+          emergencyContactName: userData?.emergency_contact_name || '',
+          emergencyContactNumber: userData?.emergency_contact_number || '',
+          region: userData?.region || '',
+          city: userData?.city || '',
+          barangay: userData?.barangay || '',
+          password: password, // Note: This is for local storage compatibility
+        };
+
+        // Save to local storage directly (don't use register as it checks for duplicates)
+        await StorageService.saveUserSession(userDataForStorage);
+        
+        // Update AuthContext by reloading user
+        await loadUser();
+        
+        // Navigate to Home screen
+        router.replace('/screens/Home/Home');
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+    }
+    
+    setLoading(false);
+  };
+
+  // Navigate to Register screen
+  const handleGoToSignUp = () => {
+    router.push('/screens/AccessPoint/Register/Register');
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <LinearGradient
+      colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.gradientContainer}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.content}>
-          <AuthHeader 
-            title="Welcome Back" 
-            subtitle="Sign in to continue to AccessPoint"
-          />
-          
-          <View style={styles.form}>
-            <InputField
-              label="Email or Phone"
-              placeholder="Enter your email or phone number"
-              value={emailOrPhone}
-              onChangeText={setEmailOrPhone}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={errors.emailOrPhone}
-              icon={<Ionicons name="person-outline" size={20} color="#666" />}
-            />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
             
-            <InputField
-              label="Password"
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              error={errors.password}
-              icon={
-                <TouchableOpacity onPress={togglePasswordVisibility}>
-                  <Ionicons 
-                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
-                    color="#666" 
+            {/* --- CUSTOM HEADER --- */}
+            <View style={{ marginBottom: 30 }}>
+              <Text style={styles.headerTitle}>
+                Welcome Back
+              </Text>
+              <Text style={styles.headerSubtitle}>
+                Sign in to continue to AccessPoint
+              </Text>
+            </View>
+            
+            <View style={styles.form}>
+              
+              {/* --- CUSTOM INPUT FIELD: EMAIL --- */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Email</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={22} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
                   />
-                </TouchableOpacity>
-              }
-            />
+                </View>
+              </View>
+              
+              {/* --- CUSTOM INPUT FIELD: PASSWORD --- */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.inputWrapper}>
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons 
+                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                      size={22} 
+                      color="#666" 
+                      style={styles.inputIcon} 
+                    />
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+              
+              {/* --- PRIMARY BUTTON --- */}
+              <TouchableOpacity 
+                style={styles.button} 
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.buttonText}>
+                    Login
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
             
-            <ErrorText message={errors.general} />
-            
-            <PrimaryButton
-              title="Login"
-              onPress={handleLogin}
-              loading={loading}
-            />
-            
+            {/* --- FOOTER --- */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={handleGoToSignup}>
-                <Text style={styles.footerLink}>Sign Up</Text>
+              <Text style={styles.footerText}>
+                Don't have an account? 
+              </Text>
+              <TouchableOpacity onPress={handleGoToSignUp}>
+                <Text style={styles.footerLink}>
+                  Sign Up
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </ScrollView>
-      
-      <LoaderOverlay visible={loading} message="Logging in..." />
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
-};
-
-export default Login;
+}

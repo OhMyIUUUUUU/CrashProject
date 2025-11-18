@@ -3,17 +3,21 @@ import NetInfo from '@react-native-community/netinfo';
 // import { Picker } from '@react-native-picker/picker';
 import barangay from 'barangay';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../../contexts/AuthContext';
-import { UserData, StorageService } from '../../../utils/storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { supabase } from '../../../lib/supabase';
+import { StorageService, UserData } from '../../../utils/storage';
 import { ValidationRules } from '../../../utils/validation';
+import { useAuth } from '../../../contexts/AuthContext';
 import AuthHeader from '../components/AuthHeader/AuthHeader';
+import DatePicker from '../components/DatePicker/DatePicker';
 import ErrorText from '../components/ErrorText/ErrorText';
 import InputField from '../components/InputField/InputField';
 import LoaderOverlay from '../components/LoaderOverlay/LoaderOverlay';
 import PrimaryButton from '../components/PrimaryButton/PrimaryButton';
 import SearchablePicker from '../components/SearchablePicker/SearchablePicker';
+import SimplePicker from '../components/SimplePicker/SimplePicker';
 import { styles } from './style';
 
 interface FormErrors {
@@ -22,7 +26,7 @@ interface FormErrors {
   firstName?: string;
   lastName?: string;
   gender?: string;
-  age?: string;
+  birthdate?: string;
   emergencyContactName?: string;
   emergencyContactNumber?: string;
   region?: string;
@@ -35,7 +39,7 @@ interface FormErrors {
 
 const Register: React.FC = () => {
   const router = useRouter();
-  const { register } = useAuth();
+  const { register: registerUser } = useAuth();
   
   const [formData, setFormData] = useState({
     email: '',
@@ -43,7 +47,7 @@ const Register: React.FC = () => {
     firstName: '',
     lastName: '',
     gender: '',
-    age: '',
+    birthdate: '',
     emergencyContactName: '',
     emergencyContactNumber: '',
     region: '',
@@ -57,6 +61,14 @@ const Register: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const otpTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const otpInputRef = useRef<TextInput>(null);
 
   // Monitor network connectivity
   useEffect(() => {
@@ -70,12 +82,174 @@ const Register: React.FC = () => {
     return () => unsubscribe();
   }, [router]);
 
+  useEffect(() => {
+    if (!showOtpModal || resendTimer <= 0) {
+      if (otpTimerRef.current) {
+        clearInterval(otpTimerRef.current);
+        otpTimerRef.current = null;
+      }
+      return;
+    }
+
+    otpTimerRef.current = setInterval(() => {
+      setResendTimer(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => {
+      if (otpTimerRef.current) {
+        clearInterval(otpTimerRef.current);
+        otpTimerRef.current = null;
+      }
+    };
+  }, [showOtpModal, resendTimer]);
+
+  const openOtpModal = (email: string) => {
+    setVerificationEmail(email);
+    setOtpCode('');
+    setOtpError('');
+    setResendTimer(30);
+    setShowOtpModal(true);
+    // Focus the input after a short delay to ensure modal is rendered
+    setTimeout(() => {
+      if (otpInputRef.current) {
+        otpInputRef.current.focus();
+      }
+    }, 100);
+  };
+
+  const closeOtpModal = () => {
+    setShowOtpModal(false);
+    setOtpCode('');
+    setOtpError('');
+    setResendTimer(0);
+  };
+
+  const handleVerifyOtp = useCallback(async () => {
+    if (otpCode.length !== 6) {
+      setOtpError('Please enter the complete 6-digit code');
+      return;
+    }
+
+    setOtpLoading(true);
+    setOtpError('');
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: verificationEmail,
+      token: otpCode,
+      type: 'email',
+    });
+
+    setOtpLoading(false);
+
+    if (error) {
+      // Check if it's an invalid OTP/token error
+      const errorMessage = error.message?.toLowerCase() || '';
+      const isInvalidOtp = 
+        error.status === 400 ||
+        errorMessage.includes('token') || 
+        errorMessage.includes('invalid') ||
+        errorMessage.includes('expired') ||
+        errorMessage.includes('code') ||
+        errorMessage.includes('otp') ||
+        errorMessage.includes('verification');
+      
+      if (isInvalidOtp) {
+        setOtpError('Wrong OTP');
+      } else {
+        setOtpError(error.message);
+      }
+      return;
+    }
+
+    if (data.session) {
+      // Save user data to local storage after OTP verification
+      try {
+        const userData: UserData = {
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          gender: formData.gender,
+          birthdate: formData.birthdate,
+          emergencyContactName: formData.emergencyContactName.trim(),
+          emergencyContactNumber: formData.emergencyContactNumber.trim(),
+          region: formData.region,
+          city: formData.city,
+          barangay: formData.barangay,
+          password: formData.password, // Note: This is for local storage compatibility
+        };
+
+        // Save to local storage and update AuthContext
+        await registerUser(userData);
+      } catch (error) {
+        console.error('Error saving user data:', error);
+      }
+
+      closeOtpModal();
+      // Wait for modal to close before navigating
+      setTimeout(() => {
+        try {
+          router.replace('/screens/Home/Home');
+          // Show success message after navigation
+          setTimeout(() => {
+            Alert.alert('Success', 'Account verified successfully!');
+          }, 300);
+        } catch (error) {
+          console.error('Navigation error:', error);
+          // Retry navigation after a longer delay if it fails
+          setTimeout(() => {
+            router.replace('/screens/Home/Home');
+          }, 500);
+        }
+      }, 300);
+    }
+  }, [otpCode, router, verificationEmail, formData, registerUser]);
+
+  const handleResendOtp = useCallback(async () => {
+    if (resendTimer > 0 || !verificationEmail) return;
+
+    setOtpError('');
+    setOtpLoading(true);
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: verificationEmail,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
+
+    setOtpLoading(false);
+
+    if (error) {
+      // Check if error is rate limiting
+      const rateLimitMatch = error.message.match(/after (\d+) seconds?/i);
+      if (rateLimitMatch) {
+        const waitTime = parseInt(rateLimitMatch[1], 10);
+        setResendTimer(waitTime);
+        setOtpError(`Please wait ${waitTime} seconds before requesting a new code.`);
+      } else {
+        setOtpError(error.message);
+      }
+      return;
+    }
+
+    setResendTimer(30);
+    setOtpCode('');
+    setOtpError('');
+    Alert.alert('Code Sent', 'A new verification code has been sent to your email.');
+  }, [resendTimer, verificationEmail]);
+
   // Get all regions from barangay package
   const regions = useMemo(() => {
     try {
       const regionData = barangay();
       console.log('Regions data:', regionData);
-      return Array.isArray(regionData) ? regionData : [];
+      console.log('Regions count:', Array.isArray(regionData) ? regionData.length : 0);
+      const result = Array.isArray(regionData) ? regionData : [];
+      if (result.length === 0) {
+        console.warn('Warning: No regions found!');
+      }
+      return result;
     } catch (error) {
       console.error('Error fetching regions:', error);
       return [];
@@ -192,8 +366,8 @@ const Register: React.FC = () => {
     const genderError = ValidationRules.required(formData.gender, 'Gender');
     if (genderError) newErrors.gender = genderError;
     
-    const ageError = ValidationRules.age(formData.age);
-    if (ageError) newErrors.age = ageError;
+    const birthdateError = ValidationRules.birthdate(formData.birthdate);
+    if (birthdateError) newErrors.birthdate = birthdateError;
     
     const emergencyNameError = ValidationRules.required(formData.emergencyContactName, 'Emergency Contact Name');
     if (emergencyNameError) newErrors.emergencyContactName = emergencyNameError;
@@ -227,44 +401,137 @@ const Register: React.FC = () => {
     setErrors({});
     
     try {
-      const userData: UserData = {
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        gender: formData.gender,
-        age: formData.age,
-        emergencyContactName: formData.emergencyContactName.trim(),
-        emergencyContactNumber: formData.emergencyContactNumber.trim(),
-        region: formData.region,
-        city: formData.city,
-        barangay: formData.barangay,
-        password: formData.password,
-      };
-      
-      const success = await register(userData);
-      
-      if (success) {
-        // Ensure emergency contact shows on Home by saving it to contacts list
-        if (formData.emergencyContactName && formData.emergencyContactNumber) {
-          try {
-            await StorageService.addEmergencyContact({
-              id: Date.now().toString(),
-              name: formData.emergencyContactName.trim(),
-              number: formData.emergencyContactNumber.trim(),
-            });
-          } catch {}
+      const duplicateErrors: FormErrors = {};
+      const trimmedEmail = formData.email.trim();
+      const trimmedPhone = formData.phone.trim();
+
+      // Check for existing email/phone in tbl_users
+      if (trimmedEmail || trimmedPhone) {
+        const conditions = [`email.eq.${trimmedEmail}`];
+        if (trimmedPhone) {
+          conditions.push(`phone.eq.${trimmedPhone}`);
         }
-        router.replace('/screens/Home/Home');
-      } else {
-        setErrors({ general: 'User with this email or phone already exists.' });
+
+        const { data: existingUsers, error: existingCheckError } = await supabase
+          .from('tbl_users')
+          .select('email, phone')
+          .or(conditions.join(','));
+
+        if (!existingCheckError && existingUsers && existingUsers.length > 0) {
+          const emailExists = existingUsers.some(
+            user => user.email?.toLowerCase() === trimmedEmail.toLowerCase()
+          );
+          const phoneExists =
+            !!trimmedPhone &&
+            existingUsers.some(user => user.phone === trimmedPhone);
+
+          if (emailExists) {
+            duplicateErrors.email = 'This email is already registered';
+          }
+          if (phoneExists) {
+            duplicateErrors.phone = 'This phone number is already registered';
+          }
+
+          if (emailExists || phoneExists) {
+            setErrors(prev => ({ ...prev, ...duplicateErrors }));
+            setLoading(false);
+            return;
+          }
+        }
       }
-    } catch (error) {
-      setErrors({ general: 'An error occurred during registration. Please try again.' });
+
+      // First, sign up with Supabase using email and password
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
+
+      if (authError) {
+        Alert.alert('Registration Failed', authError.message);
+        setErrors({ general: authError.message });
+        setLoading(false);
+        return;
+      }
+
+      if (!authData.user) {
+        Alert.alert('Registration Failed', 'Unable to create account. Please try again.');
+        setErrors({ general: 'Unable to create account. Please try again.' });
+        setLoading(false);
+        return;
+      }
+
+      // Insert user data into tbl_users table
+      const { error: dbError } = await supabase
+        .from('tbl_users')
+        .insert({
+          user_id: authData.user.id,
+          email: formData.email.trim(),
+          phone: formData.phone.trim() || null,
+          password_hash: formData.password, // Note: Supabase handles password hashing, but storing for reference
+          first_name: formData.firstName.trim() || null,
+          last_name: formData.lastName.trim() || null,
+          birthdate: formData.birthdate.trim() || null,
+          sex: formData.gender || null,
+          emergency_contact_name: formData.emergencyContactName.trim() || null,
+          emergency_contact_number: formData.emergencyContactNumber.trim() || null,
+          region: formData.region || null,
+          city: formData.city || null,
+          barangay: formData.barangay || null,
+          created_at: new Date().toISOString(),
+        });
+
+      if (dbError) {
+        console.error('Database insert error:', dbError);
+        Alert.alert('Warning', 'Account created but failed to save additional information. ' + dbError.message);
+        // Continue anyway since auth was successful
+      }
+
+      // Ensure emergency contact shows on Home by saving it to contacts list
+      if (formData.emergencyContactName && formData.emergencyContactNumber) {
+        try {
+          await StorageService.addEmergencyContact({
+            id: Date.now().toString(),
+            name: formData.emergencyContactName.trim(),
+            number: formData.emergencyContactNumber.trim(),
+          });
+        } catch {}
+      }
+
+      // Send OTP and show OTP modal
+      // Note: Supabase signUp may have already sent a confirmation email
+      // We'll try to send OTP, but if rate limited, we'll still show the modal
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email: formData.email.trim(),
+        options: {
+          shouldCreateUser: false,
+        },
+      });
+
+      // Always show OTP modal - even if there's a rate limit error
+      // The user can resend after the wait period
+      openOtpModal(formData.email.trim());
+      setLoading(false);
+      
+      if (otpError) {
+        // Check if error is rate limiting and extract wait time
+        const rateLimitMatch = otpError.message.match(/after (\d+) seconds?/i);
+        if (rateLimitMatch) {
+          const waitTime = parseInt(rateLimitMatch[1], 10);
+          setResendTimer(waitTime);
+          setOtpError(`Rate limited. Please wait ${waitTime} seconds before requesting a new code.`);
+        } else {
+          setOtpError(otpError.message);
+        }
+      }
+      
+      return;
+    } catch (error: any) {
+      Alert.alert('Registration Error', error.message || 'An error occurred during registration. Please try again.');
+      setErrors({ general: error.message || 'An error occurred during registration. Please try again.' });
     } finally {
       setLoading(false);
     }
-  }, [formData, register, router, validateForm]);
+  }, [formData, router, validateForm]);
 
   const handleGoToLogin = useCallback(() => {
     router.back();
@@ -279,22 +546,28 @@ const Register: React.FC = () => {
   }, []);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <LinearGradient
+      colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.gradientContainer}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.content}>
-          <AuthHeader 
-            title="Create Account" 
-            subtitle="Sign up to get started with AccessPoint"
-          />
-          
-          <View style={styles.form}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
+            <AuthHeader 
+              title="Create Account" 
+              subtitle="Sign up to get started with AccessPoint"
+            />
+            
+            <View style={styles.form}>
             <Text style={styles.sectionTitle}>Personal Information</Text>
             
             <InputField
@@ -305,7 +578,7 @@ const Register: React.FC = () => {
               keyboardType="email-address"
               autoCapitalize="none"
               error={errors.email}
-              icon={<Ionicons name="mail-outline" size={20} color="#666" />}
+              icon={<Ionicons name="mail-outline" size={22} color="#666" />}
             />
             
             <InputField
@@ -315,7 +588,7 @@ const Register: React.FC = () => {
               onChangeText={(value) => updateFormData('phone', value)}
               keyboardType="phone-pad"
               error={errors.phone}
-              icon={<Ionicons name="call-outline" size={20} color="#666" />}
+              icon={<Ionicons name="call-outline" size={22} color="#666" />}
             />
             
             <View style={styles.row}>
@@ -341,24 +614,26 @@ const Register: React.FC = () => {
             
             <View style={styles.row}>
               <View style={styles.halfWidth}>
-                <SearchablePicker
+                <SimplePicker
                   label="Gender"
                   placeholder="Select Gender"
                   value={formData.gender}
-                  data={["male", "female", "other"]}
+                  data={["Male", "Female", "Other"]}
                   onValueChange={(value) => updateFormData('gender', value)}
                   enabled={true}
                   error={errors.gender}
                 />
               </View>
               <View style={styles.halfWidth}>
-                <InputField
-                  label="Age"
-                  placeholder="Age"
-                  value={formData.age}
-                  onChangeText={(value) => updateFormData('age', value)}
-                  keyboardType="number-pad"
-                  error={errors.age}
+                <DatePicker
+                  label="Birthdate"
+                  placeholder="Select birthdate"
+                  value={formData.birthdate}
+                  onValueChange={(value) => updateFormData('birthdate', value)}
+                  enabled={true}
+                  error={errors.birthdate}
+                  maximumDate={new Date()}
+                  minimumDate={new Date(new Date().setFullYear(new Date().getFullYear() - 120))}
                 />
               </View>
             </View>
@@ -371,7 +646,7 @@ const Register: React.FC = () => {
               value={formData.emergencyContactName}
               onChangeText={(value) => updateFormData('emergencyContactName', value)}
               error={errors.emergencyContactName}
-              icon={<Ionicons name="person-add-outline" size={20} color="#666" />}
+              icon={<Ionicons name="person-add-outline" size={22} color="#666" />}
             />
             
             <InputField
@@ -381,7 +656,7 @@ const Register: React.FC = () => {
               onChangeText={(value) => updateFormData('emergencyContactNumber', value)}
               keyboardType="phone-pad"
               error={errors.emergencyContactNumber}
-              icon={<Ionicons name="call-outline" size={20} color="#666" />}
+              icon={<Ionicons name="call-outline" size={22} color="#666" />}
             />
             
             <Text style={styles.sectionTitle}>Address Information</Text>
@@ -429,7 +704,7 @@ const Register: React.FC = () => {
                 <TouchableOpacity onPress={togglePasswordVisibility}>
                   <Ionicons 
                     name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
+                    size={22} 
                     color="#666" 
                   />
                 </TouchableOpacity>
@@ -447,7 +722,7 @@ const Register: React.FC = () => {
                 <TouchableOpacity onPress={toggleConfirmPasswordVisibility}>
                   <Ionicons 
                     name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
+                    size={22} 
                     color="#666" 
                   />
                 </TouchableOpacity>
@@ -461,6 +736,7 @@ const Register: React.FC = () => {
               onPress={handleRegister}
               loading={loading}
             />
+            </View>
             
             <View style={styles.footer}>
               <Text style={styles.footerText}>Already have an account? </Text>
@@ -469,11 +745,105 @@ const Register: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
-    </View>
-      </ScrollView>
-      
-      <LoaderOverlay visible={loading} message="Creating your account..." />
-    </KeyboardAvoidingView>
+        </ScrollView>
+        
+        <LoaderOverlay visible={loading} message="Creating your account..." />
+      </KeyboardAvoidingView>
+
+      <Modal visible={showOtpModal} transparent animationType="fade" onRequestClose={closeOtpModal}>
+        <View style={styles.otpOverlay}>
+          <View style={styles.otpCard}>
+            <Ionicons name="mail-outline" size={56} color="#FF6B6B" style={styles.otpIcon} />
+            <Text style={styles.otpTitle}>Verify Email</Text>
+            <Text style={styles.otpSubtitle}>We've sent a verification code to</Text>
+            <Text style={styles.otpEmail}>{verificationEmail}</Text>
+
+            <View style={styles.otpInputContainer}>
+              {/* Hidden TextInput for actual input */}
+              <TextInput
+                ref={otpInputRef}
+                value={otpCode}
+                onChangeText={(text) => {
+                  // Only allow numbers and limit to 6 digits
+                  const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
+                  setOtpCode(numericText);
+                  setOtpError('');
+                }}
+                keyboardType="number-pad"
+                autoFocus={true}
+                maxLength={6}
+                style={styles.otpHiddenInput}
+                caretHidden={true}
+              />
+              
+              {/* Visual display boxes */}
+              <TouchableOpacity 
+                style={styles.otpDisplayContainer}
+                activeOpacity={1}
+                onPress={() => otpInputRef.current?.focus()}
+              >
+                {[0, 1, 2, 3, 4, 5].map((index) => {
+                  const digit = otpCode[index] || '';
+                  const isFocused = otpCode.length === index;
+                  return (
+                    <View
+                      key={index}
+                      style={[
+                        styles.otpDisplayBox,
+                        digit && styles.otpDisplayBoxFilled,
+                        isFocused && styles.otpDisplayBoxFocused,
+                      ]}
+                    >
+                      <Text style={styles.otpDisplayText}>{digit}</Text>
+                    </View>
+                  );
+                })}
+              </TouchableOpacity>
+            </View>
+
+            {otpError ? <Text style={styles.otpError}>{otpError}</Text> : null}
+
+            <TouchableOpacity
+              onPress={handleVerifyOtp}
+              disabled={otpLoading || otpCode.length !== 6}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={otpCode.length === 6 && !otpLoading ? ['#FF6B6B', '#FF8787', '#FFA8A8'] : ['#E0E0E0', '#E0E0E0']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.button, (otpLoading || otpCode.length !== 6) && styles.buttonDisabled]}
+              >
+                {otpLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.resendButton}
+              onPress={handleResendOtp}
+              disabled={resendTimer > 0}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.resendText, resendTimer > 0 && styles.resendTextDisabled]}>
+                {resendTimer > 0 ? `Resend Code in ${resendTimer}s` : 'Resend Code'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.cancelOtpButton} 
+              onPress={closeOtpModal}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelOtpText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </LinearGradient>
   );
 };
 

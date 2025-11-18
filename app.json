@@ -14,18 +14,24 @@
       "adaptiveIcon": {
         "backgroundColor": "#ff6b6b"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.darkspecter.AccessPoint"
     },
     "web": {
       "output": "static"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "72932d02-028a-4016-9487-9d016dca2618"
+      }
     }
   }
 }

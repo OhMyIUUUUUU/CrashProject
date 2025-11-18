@@ -1,5 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, TouchableOpacityProps } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { styles } from './styles';
 
 interface PrimaryButtonProps extends TouchableOpacityProps {
@@ -15,6 +16,34 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = React.memo(({
   disabled,
   ...props 
 }) => {
+  if (variant === 'primary') {
+    return (
+      <TouchableOpacity
+        disabled={disabled || loading}
+        activeOpacity={0.7}
+        {...props}
+      >
+        <LinearGradient
+          colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[
+            styles.button,
+            (disabled || loading) && styles.buttonDisabled,
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {title}
+            </Text>
+          )}
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
       style={[
@@ -28,7 +57,7 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = React.memo(({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? '#ff6b6b' : '#fff'} />
+        <ActivityIndicator color={variant === 'outline' ? '#FF4C4C' : '#fff'} />
       ) : (
         <Text
           style={[

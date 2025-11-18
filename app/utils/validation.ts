@@ -36,5 +36,36 @@ export const ValidationRules = {
     if (isNaN(age) || age < 1 || age > 120) return 'Please enter a valid age';
     return undefined;
   },
+
+  birthdate: (value: string): string | undefined => {
+    if (!value) return 'Birthdate is required';
+    // Validate date format YYYY-MM-DD
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(value)) return 'Please enter a valid date (YYYY-MM-DD)';
+    
+    // Validate the date is valid
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return 'Please enter a valid date';
+    
+    // Validate the date is not in the future
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (date > today) return 'Birthdate cannot be in the future';
+    
+    // Validate the person is at least 1 year old
+    const age = today.getFullYear() - date.getFullYear();
+    const monthDiff = today.getMonth() - date.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+      const actualAge = age - 1;
+      if (actualAge < 1) return 'You must be at least 1 year old';
+    } else if (age < 1) {
+      return 'You must be at least 1 year old';
+    }
+    
+    // Validate the person is not too old (reasonable limit)
+    if (age > 120) return 'Please enter a valid birthdate';
+    
+    return undefined;
+  },
 };
 

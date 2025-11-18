@@ -4,19 +4,22 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     },
     "typeRoots": [
       "./node_modules/@types",
       "./app/types"
     ],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": false
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".expo/types/**/*.ts",
     "expo-env.d.ts",
-    "app/types/**/*.d.ts"
+    "app/types/**/*.d.ts",
+    ".expo/types/**/*.ts"
   ]
 }

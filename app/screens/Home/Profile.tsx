@@ -1,287 +1,263 @@
 import { Ionicons } from '@expo/vector-icons';
-import NetInfo from '@react-native-community/netinfo';
-import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, SafeAreaView, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import LoaderOverlay from '../AccessPoint/components/LoaderOverlay/LoaderOverlay';
+import CustomTabBar from '../../components/CustomTabBar';
 import { styles } from './styles';
+
+interface UserProfileData {
+  email: string;
+  phone: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  birthdate: string | null;
+  sex: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_number: string | null;
+  region: string | null;
+  city: string | null;
+  barangay: string | null;
+  created_at: string | null;
+}
 
 const Profile: React.FC = () => {
   const router = useRouter();
-  const { user, logout, updateUser } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'profile' | 'report'>('profile');
+  const { user, logout, loadUser } = useAuth();
+  const [profileData, setProfileData] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Monitor network connectivity
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (!state.isConnected) {
-        // If connection is lost, redirect to offline emergency screen
-        router.replace('/screens/OfflineEmergency/OfflineEmergency');
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      setLoading(true);
+      
+      // Get current user session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
+        Alert.alert('Error', 'No user session found');
+        setLoading(false);
+        return;
       }
-    });
 
-    return () => unsubscribe();
-  }, [router]);
+      // Fetch user data from database
+      const { data: userData, error } = await supabase
+        .from('tbl_users')
+        .select('*')
+        .eq('email', session.user.email)
+        .single();
 
-  const handleLogout = useCallback(() => {
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        Alert.alert('Error', 'Failed to load profile data');
+        setLoading(false);
+        return;
+      }
+
+      if (userData) {
+        setProfileData(userData as UserProfileData);
+      }
+    } catch (error: any) {
+      console.error('Error fetching profile:', error);
+      Alert.alert('Error', 'Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getInitials = () => {
+    if (!profileData) return 'U';
+    const first = profileData.first_name?.[0] || '';
+    const last = profileData.last_name?.[0] || '';
+    return (first + last).toUpperCase() || 'U';
+  };
+
+  const getFullName = () => {
+    if (!profileData) return 'User';
+    return `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'User';
+  };
+
+  const calculateAge = (birthdate: string | null) => {
+    if (!birthdate) return 'N/A';
+    try {
+      const today = new Date();
+      const birth = new Date(birthdate);
+      let age = today.getFullYear() - birth.getFullYear();
+      const monthDiff = today.getMonth() - birth.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+      return age.toString();
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const handleLogout = () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
         {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            setLoading(true);
             await logout();
-            setLoading(false);
             router.replace('/screens/AccessPoint/Login/Login');
           },
         },
       ]
     );
-  }, [logout, router]);
+  };
 
-  const handleTabChange = useCallback((tab: 'home' | 'profile' | 'report') => {
-    setActiveTab(tab);
-    if (tab === 'home') {
-      router.push('/screens/Home/Home');
-    } else if (tab === 'report') {
-      router.push('/screens/Home/Report');
-    }
-  }, [router]);
-
-  const handleChangeProfilePicture = useCallback(async () => {
-    try {
-      // Request permissions
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please grant camera roll permissions to change your profile picture.'
-        );
-        return;
-      }
-
-      // Show options to take photo or choose from library
-      Alert.alert(
-        'Change Profile Picture',
-        'Choose an option',
-        [
-          {
-            text: 'Take Photo',
-            onPress: async () => {
-              const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-              if (cameraPermission.status !== 'granted') {
-                Alert.alert('Permission Required', 'Please grant camera permissions.');
-                return;
-              }
-              
-              const result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.5,
-              });
-
-              if (!result.canceled && result.assets[0]) {
-                setLoading(true);
-                const updatedUser = { ...user!, profilePicture: result.assets[0].uri };
-                await updateUser(updatedUser);
-                setLoading(false);
-              }
-            },
-          },
-          {
-            text: 'Choose from Library',
-            onPress: async () => {
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.5,
-              });
-
-              if (!result.canceled && result.assets[0]) {
-                setLoading(true);
-                const updatedUser = { ...user!, profilePicture: result.assets[0].uri };
-                await updateUser(updatedUser);
-                setLoading(false);
-              }
-            },
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Error changing profile picture:', error);
-      Alert.alert('Error', 'Failed to change profile picture. Please try again.');
-    }
-  }, [user, updateUser]);
-
-  const InfoRow = useCallback(({ label, value, icon }: { label: string; value: string; icon: string }) => (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconContainer}>
-        <Ionicons name={icon as any} size={20} color="#ff6b6b" />
-      </View>
+  const InfoCard: React.FC<{ icon: string; label: string; value: string }> = ({
+    icon,
+    label,
+    value,
+  }) => (
+    <View style={styles.infoCard}>
+      <Ionicons name={icon as any} size={20} color="#FF6B6B" style={styles.infoIcon} />
       <View style={styles.infoContent}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+        <Text style={styles.infoValue}>{value || 'N/A'}</Text>
       </View>
     </View>
-  ), []);
+  );
+
+  if (loading) {
+    return (
+      <LinearGradient
+        colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+        style={styles.gradientContainer}
+      >
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 16, marginTop: 16 }}>Loading profile...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          onPress={() => router.back()}
-          style={styles.backButton}
-          activeOpacity={0.7}
+    <LinearGradient
+      colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+      style={styles.gradientContainer}
+    >
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons name="arrow-back" size={24} color="#1a1a1a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.headerRight} />
-      </View>
+          {/* Profile Header */}
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarLarge}>
+              <Text style={styles.avatarLargeText}>{getInitials()}</Text>
+            </View>
+            <Text style={styles.profileName}>{getFullName()}</Text>
+            <Text style={styles.profileEmail}>{profileData?.email || 'No email'}</Text>
+          </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              {user?.profilePicture ? (
-                <Image 
-                  source={{ uri: user.profilePicture }} 
-                  style={styles.avatarImage}
+          {/* Personal Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Personal Information</Text>
+            <View style={styles.infoSection}>
+              <InfoCard icon="person-outline" label="First Name" value={profileData?.first_name || 'N/A'} />
+              <InfoCard icon="person-outline" label="Last Name" value={profileData?.last_name || 'N/A'} />
+              <InfoCard icon="person-outline" label="Gender" value={profileData?.sex || 'N/A'} />
+              <InfoCard
+                icon="calendar-outline"
+                label="Birthdate"
+                value={formatDate(profileData?.birthdate || null)}
+              />
+              <InfoCard
+                icon="calendar-outline"
+                label="Age"
+                value={calculateAge(profileData?.birthdate || null)}
+              />
+              <InfoCard icon="call-outline" label="Phone" value={profileData?.phone || 'N/A'} />
+              {profileData?.created_at && (
+                <InfoCard
+                  icon="time-outline"
+                  label="Member Since"
+                  value={formatDate(profileData.created_at)}
                 />
-              ) : (
-                <Text style={styles.avatarText}>
-                  {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
-                </Text>
               )}
             </View>
-            <TouchableOpacity 
-              style={styles.cameraButton}
-              onPress={handleChangeProfilePicture}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="camera" size={20} color="#fff" />
-            </TouchableOpacity>
           </View>
-          <Text style={styles.profileName}>
-            {user?.firstName} {user?.lastName}
-          </Text>
-          <Text style={styles.profileEmail}>{user?.email}</Text>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          <View style={styles.infoCard}>
-            <InfoRow label="Email" value={user?.email || 'N/A'} icon="mail-outline" />
-            <InfoRow label="Phone" value={user?.phone || 'N/A'} icon="call-outline" />
-            <InfoRow label="Gender" value={user?.gender || 'N/A'} icon="person-outline" />
-            <InfoRow label="Age" value={user?.age || 'N/A'} icon="calendar-outline" />
-          </View>
-        </View>
+          {/* Emergency Contact */}
+          {(profileData?.emergency_contact_name || profileData?.emergency_contact_number) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Emergency Contact</Text>
+              <View style={styles.infoSection}>
+                <InfoCard
+                  icon="person-circle-outline"
+                  label="Contact Name"
+                  value={profileData.emergency_contact_name || 'N/A'}
+                />
+                <InfoCard
+                  icon="call-outline"
+                  label="Contact Number"
+                  value={profileData.emergency_contact_number || 'N/A'}
+                />
+              </View>
+            </View>
+          )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Emergency Contact</Text>
-          <View style={styles.infoCard}>
-            <InfoRow 
-              label="Contact Name" 
-              value={user?.emergencyContactName || 'N/A'} 
-              icon="person-add-outline" 
-            />
-            <InfoRow 
-              label="Contact Number" 
-              value={user?.emergencyContactNumber || 'N/A'} 
-              icon="call-outline" 
-            />
-          </View>
-        </View>
+          {/* Address */}
+          {(profileData?.region || profileData?.city || profileData?.barangay) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Address</Text>
+              <View style={styles.infoSection}>
+                <InfoCard icon="location-outline" label="Region" value={profileData?.region || 'N/A'} />
+                <InfoCard icon="business-outline" label="City/Province" value={profileData?.city || 'N/A'} />
+                <InfoCard icon="home-outline" label="Barangay" value={profileData?.barangay || 'N/A'} />
+              </View>
+            </View>
+          )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Address</Text>
-          <View style={styles.infoCard}>
-            <InfoRow label="Region" value={user?.region || 'N/A'} icon="location-outline" />
-            <InfoRow label="City" value={user?.city || 'N/A'} icon="location-outline" />
-            <InfoRow label="Barangay" value={user?.barangay || 'N/A'} icon="location-outline" />
-          </View>
-        </View>
+          {/* Logout Button */}
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#fff" />
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
-        <TouchableOpacity 
-          style={styles.logoutButton}
-          onPress={handleLogout}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#fff" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      <View style={styles.tabBarContainer}>
-        <TouchableOpacity 
-          style={styles.tabItem}
-          onPress={() => handleTabChange('home')}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name="home-outline" 
-            size={22} 
-            color="#8e8e93" 
-          />
-          <Text style={styles.tabLabel}>
-            Home
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.tabItem}
-          onPress={() => handleTabChange('report')}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name="document-text-outline" 
-            size={22} 
-            color="#8e8e93" 
-          />
-          <Text style={styles.tabLabel}>
-            Report
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.tabItem, activeTab === 'profile' && styles.tabItemActive]}
-          onPress={() => handleTabChange('profile')}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.tabContent, activeTab === 'profile' && styles.tabContentActive]}>
-            <Ionicons 
-              name="person-outline" 
-              size={22} 
-              color={activeTab === 'profile' ? '#ff6b6b' : '#8e8e93'} 
-            />
-            <Text style={[styles.tabLabel, activeTab === 'profile' && styles.tabLabelActive]}>
-              Profile
-            </Text>
-          </View>
-        </TouchableOpacity>
+        {/* Bottom Navigation */}
+        <CustomTabBar />
       </View>
-
-      <LoaderOverlay visible={loading} message="Logging out..." />
-    </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 export default Profile;
+

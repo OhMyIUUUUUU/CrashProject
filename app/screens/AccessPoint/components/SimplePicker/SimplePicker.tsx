@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 
-interface SearchablePickerProps {
+interface SimplePickerProps {
   label: string;
   placeholder: string;
   value: string;
@@ -12,7 +12,7 @@ interface SearchablePickerProps {
   error?: string;
 }
 
-const SearchablePicker: React.FC<SearchablePickerProps> = React.memo(({
+const SimplePicker: React.FC<SimplePickerProps> = React.memo(({
   label,
   placeholder,
   value,
@@ -22,36 +22,17 @@ const SearchablePicker: React.FC<SearchablePickerProps> = React.memo(({
   error,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const filteredData = useMemo(() => {
-    if (!data || !Array.isArray(data)) {
-      console.log('SearchablePicker: data is not an array', data);
-      return [];
-    }
-    if (!searchQuery.trim()) return data;
-    const query = searchQuery.toLowerCase();
-    return data.filter(item => item.toLowerCase().includes(query));
-  }, [data, searchQuery]);
 
   const handleSelect = useCallback((item: string) => {
     onValueChange(item);
     setIsOpen(false);
-    setSearchQuery('');
   }, [onValueChange]);
 
   const handleToggle = useCallback(() => {
     if (enabled) {
-      console.log('SearchablePicker: Toggling modal, data length:', data?.length);
-      setIsOpen(prev => {
-        const newState = !prev;
-        if (newState) {
-          setSearchQuery('');
-        }
-        return newState;
-      });
+      setIsOpen(prev => !prev);
     }
-  }, [enabled, data]);
+  }, [enabled]);
 
   const renderItem = useCallback(({ item }: { item: string }) => (
     <TouchableOpacity
@@ -115,45 +96,14 @@ const SearchablePicker: React.FC<SearchablePickerProps> = React.memo(({
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.searchContainer}>
-                    <Ionicons name="search" size={18} color="#666" />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder={`Search ${label.toLowerCase()}...`}
-                      placeholderTextColor="#999"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    {searchQuery.length > 0 && (
-                      <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
-                        <Ionicons name="close-circle" size={18} color="#999" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <View style={styles.listContainer}>
-                    {filteredData.length > 0 ? (
-                      <FlatList
-                        data={filteredData}
-                        renderItem={renderItem}
-                        keyExtractor={keyExtractor}
-                        style={styles.list}
-                        contentContainerStyle={styles.listContent}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator={true}
-                        nestedScrollEnabled={true}
-                      />
-                    ) : (
-                      <View style={styles.emptyContainer}>
-                        <Ionicons name="search-outline" size={40} color="#ccc" />
-                        <Text style={styles.emptyText}>
-                          {data && data.length > 0 ? 'No results found' : 'No data available'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                  <FlatList
+                    data={data}
+                    renderItem={renderItem}
+                    keyExtractor={keyExtractor}
+                    style={styles.list}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                  />
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -164,7 +114,7 @@ const SearchablePicker: React.FC<SearchablePickerProps> = React.memo(({
   );
 });
 
-SearchablePicker.displayName = 'SearchablePicker';
+SimplePicker.displayName = 'SimplePicker';
 
 const styles = StyleSheet.create({
   container: {
@@ -232,9 +182,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '80%',
-    flexDirection: 'column',
-    minHeight: 400,
+    maxHeight: '50%',
+    paddingBottom: 20,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -250,33 +199,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1a1a1a',
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginVertical: 15,
-    paddingHorizontal: 12,
-    height: 45,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1a1a1a',
-    padding: 0,
-  },
-  listContainer: {
-    flex: 1,
-    minHeight: 300,
-  },
   list: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 10,
-    flexGrow: 1,
+    flexGrow: 0,
   },
   dropdownItem: {
     flexDirection: 'row',
@@ -299,17 +223,7 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     fontWeight: '600',
   },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 10,
-  },
 });
 
-export default SearchablePicker;
+export default SimplePicker;
 

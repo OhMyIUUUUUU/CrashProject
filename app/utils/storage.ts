@@ -6,7 +6,7 @@ export interface UserData {
   firstName: string;
   lastName: string;
   gender: string;
-  age: string;
+  birthdate: string;
   emergencyContactName: string;
   emergencyContactNumber: string;
   region: string;
