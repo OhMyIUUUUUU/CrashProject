@@ -3,7 +3,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 const buttonSize = Math.min(screenWidth * 0.5, 200);
@@ -47,7 +47,7 @@ const OfflineEmergency: React.FC = () => {
           if (user) {
             router.replace('/screens/Home/Home');
           } else {
-            router.replace('/screens/AccessPoint/Login/Login');
+            router.replace('/screens/AccessPoint/components/Login/Login');
           }
         }, 1000);
       }

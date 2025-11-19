@@ -14,9 +14,9 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { supabase } from '../../../lib/supabase';
-import { StorageService, UserData } from '../../../utils/storage';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { StorageService, UserData } from '../../../../../utils/storage';
+import { supabase } from '../../../../lib/supabase';
 import { styles } from './styles';
 
 export default function Login() {
@@ -108,7 +108,7 @@ export default function Login() {
 
   // Navigate to Register screen
   const handleGoToSignUp = () => {
-    router.push('/screens/AccessPoint/Register/Register');
+    router.push('/screens/AccessPoint/components/Register/Register');
   };
 
   return (

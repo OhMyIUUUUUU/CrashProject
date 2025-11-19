@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
-import { StorageService, UserData } from '../utils/storage';
+import { StorageService, UserData } from '../../utils/storage';
 
 interface AuthContextType {
   user: UserData | null;

@@ -8,7 +8,7 @@ import {
   addNotificationResponseListener,
   getInitialNotification,
   initializeNotifications
-} from './screens/Notifications/notificationService';
+} from './screens/AccessPoint/components/Notifications/notificationService';
 
 function RootLayoutContent() {
   const router = useRouter();
@@ -41,7 +41,7 @@ function RootLayoutContent() {
       };
       
       router.push({
-        pathname: '/screens/Notifications/notificationService',
+        pathname: '/screens/Notifications/Notifications',
         params,
       });
     }
@@ -198,15 +198,15 @@ function RootLayoutContent() {
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/SplashScreen/SplashScreen" 
+          name="screens/AccessPoint/components/SplashScreen/SplashScreen" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/Login/Login" 
+          name="screens/AccessPoint/components/Login/Login" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/Register/Register" 
+          name="screens/AccessPoint/components/Register/Register" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
@@ -222,7 +222,7 @@ function RootLayoutContent() {
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/OfflineEmergency/OfflineEmergency" 
+          name="screens/AccessPoint/components/OfflineEmergency/OfflineEmergency" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
@@ -230,15 +230,7 @@ function RootLayoutContent() {
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/TestNotification/TestNotification" 
-          options={{ headerShown: false }} 
-        />
-        <Stack.Screen 
-          name="screens/TestNotification/CompleteNotificationDemo" 
-          options={{ headerShown: false }} 
-        />
-        <Stack.Screen 
-          name="screens/UserDataDemo/UserDataDemo" 
+          name="screens/AccessPoint/components/UserDataDemo/UserDataDemo" 
           options={{ headerShown: false }} 
         />
       </Stack>

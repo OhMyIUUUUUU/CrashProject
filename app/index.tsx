@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator, View } from 'react-native'
-import { supabase } from './lib/supabase'
 import { useAuth } from './contexts/AuthContext'
+import { supabase } from './lib/supabase'
 
 export default function Index() {
   const router = useRouter()
@@ -22,7 +22,7 @@ export default function Index() {
         router.replace('/screens/Home/Home')
       } else {
         // User is not logged in - navigate to Login
-        router.replace('/screens/AccessPoint/Login/Login')
+        router.replace('/screens/AccessPoint/components/Login/Login')
       }
     }
 
@@ -35,7 +35,7 @@ export default function Index() {
       if (session && isAuthenticated) {
         router.replace('/screens/Home/Home')
       } else {
-        router.replace('/screens/AccessPoint/Login/Login')
+        router.replace('/screens/AccessPoint/components/Login/Login')
       }
     })
 

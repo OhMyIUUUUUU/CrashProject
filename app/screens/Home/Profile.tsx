@@ -127,7 +127,7 @@ const Profile: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             await logout();
-            router.replace('/screens/AccessPoint/Login/Login');
+            router.replace('/screens/AccessPoint/components/Login/Login');
           },
         },
       ]

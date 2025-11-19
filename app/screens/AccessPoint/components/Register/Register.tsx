@@ -2,22 +2,22 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 // import { Picker } from '@react-native-picker/picker';
 import barangay from 'barangay';
-import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { supabase } from '../../../lib/supabase';
-import { StorageService, UserData } from '../../../utils/storage';
-import { ValidationRules } from '../../../utils/validation';
-import { useAuth } from '../../../contexts/AuthContext';
-import AuthHeader from '../components/AuthHeader/AuthHeader';
-import DatePicker from '../components/DatePicker/DatePicker';
-import ErrorText from '../components/ErrorText/ErrorText';
-import InputField from '../components/InputField/InputField';
-import LoaderOverlay from '../components/LoaderOverlay/LoaderOverlay';
-import PrimaryButton from '../components/PrimaryButton/PrimaryButton';
-import SearchablePicker from '../components/SearchablePicker/SearchablePicker';
-import SimplePicker from '../components/SimplePicker/SimplePicker';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { StorageService, UserData } from '../../../../../utils/storage';
+import { ValidationRules } from '../../../../../utils/validation';
+import AuthHeader from '../AuthHeader/AuthHeader';
+import DatePicker from '../DatePicker/DatePicker';
+import ErrorText from '../ErrorText/ErrorText';
+import InputField from '../InputField/InputField';
+import { supabase } from '../../../../lib/supabase';
+import LoaderOverlay from '../LoaderOverlay/LoaderOverlay';
+import PrimaryButton from '../PrimaryButton/PrimaryButton';
+import SearchablePicker from '../SearchablePicker/SearchablePicker';
+import SimplePicker from '../SimplePicker/SimplePicker';
 import { styles } from './style';
 
 interface FormErrors {
@@ -75,7 +75,7 @@ const Register: React.FC = () => {
     const unsubscribe = NetInfo.addEventListener(state => {
       if (!state.isConnected) {
         // If connection is lost, redirect to offline emergency screen
-        router.replace('/screens/OfflineEmergency/OfflineEmergency');
+        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
       }
     });
 

@@ -3,8 +3,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
 import CustomTabBar from '../../components/CustomTabBar';
+import { useAuth } from '../../contexts/AuthContext';
 import { styles } from './styles';
 
 interface EmergencyContact {
@@ -32,6 +32,8 @@ const Home: React.FC = () => {
   const ripple1 = useRef(new Animated.Value(1)).current;
   const ripple2 = useRef(new Animated.Value(1)).current;
   const ripple3 = useRef(new Animated.Value(1)).current;
+  // Breathing animation for SOS button
+  const breathingAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     // Load user data if not already loaded
@@ -97,12 +99,33 @@ const Home: React.FC = () => {
     };
   }, [ripple1, ripple2, ripple3]);
 
+  // Breathing animation for SOS button
+  useEffect(() => {
+    const breathingAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breathingAnim, {
+          toValue: 1.05,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(breathingAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    breathingAnimation.start();
+
+    return () => {
+      breathingAnimation.stop();
+    };
+  }, [breathingAnim]);
+
   const handleSOS = () => {
-    // Navigate to report screen with emergency type
-    router.push({
-      pathname: '/screens/Home/Report',
-      params: { type: 'emergency' },
-    });
+    // Navigate to report screen
+    router.push('/screens/Home/Report');
   };
 
   const handleCall = (phoneNumber: string) => {
@@ -263,23 +286,28 @@ const Home: React.FC = () => {
               ]}
             />
             
-            {/* SOS Button */}
-            <TouchableOpacity
-              style={[styles.sosButton, { width: sosButtonSize, height: sosButtonSize, borderRadius: sosButtonSize / 2 }]}
-              onPress={handleSOS}
-              activeOpacity={0.8}
+            {/* SOS Button - Neumorphism with Breathing Animation */}
+            <Animated.View 
+              style={[
+                styles.sosButtonNeumorphic, 
+                { 
+                  width: sosButtonSize, 
+                  height: sosButtonSize, 
+                  borderRadius: sosButtonSize / 2,
+                  transform: [{ scale: breathingAnim }],
+                }
+              ]}
             >
-              <LinearGradient
-                colors={['#FF3B30', '#FF6B6B', '#FF8787']}
-                style={[styles.sosButtonGradient, { width: sosButtonSize, height: sosButtonSize, borderRadius: sosButtonSize / 2 }]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+              <TouchableOpacity
+                style={[styles.sosButtonInner, { width: sosButtonSize * 0.92, height: sosButtonSize * 0.92, borderRadius: (sosButtonSize * 0.92) / 2 }]}
+                onPress={handleSOS}
+                activeOpacity={0.9}
               >
                 <View style={styles.sosButtonContent}>
                   <Text style={[styles.sosButtonText, { fontSize: sosButtonSize * 0.25 }]}>SOS</Text>
                 </View>
-              </LinearGradient>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
           {/* Emergency Contact */}

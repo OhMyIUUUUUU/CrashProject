@@ -48,7 +48,7 @@ export default function CustomTabBar() {
 
   const allRoutes: Record<ScreenType, ScreenConfig> = {
     Home: { name: "Home", path: "/screens/Home/Home", icon: "home", segment: "Home" },
-    Report: { name: "Report", path: "/screens/Home/Report", icon: "document-text", segment: "Report" },
+    Report: { name: "Report", path: "/screens/Home/Report", icon: "alert", segment: "Report" },
     Profile: { name: "Profile", path: "/screens/Home/Profile", icon: "person", segment: "Profile" },
   };
 

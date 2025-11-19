@@ -3,7 +3,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 
 const SplashScreen: React.FC = () => {
   const router = useRouter();
@@ -36,7 +36,7 @@ const SplashScreen: React.FC = () => {
           await new Promise(resolve => setTimeout(resolve, 800));
           if (!hasNavigated.current) {
             hasNavigated.current = true;
-            router.replace('/screens/OfflineEmergency/OfflineEmergency');
+            router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
           }
           return;
         }
@@ -46,7 +46,7 @@ const SplashScreen: React.FC = () => {
         await loadUser();
         
         // Check authentication directly from storage
-        const { StorageService } = await import('../../utils/storage');
+        const { StorageService } = await import('../../../../../utils/storage');
         const loggedIn = await StorageService.isLoggedIn();
         
         // Navigate based on authentication
@@ -62,7 +62,7 @@ const SplashScreen: React.FC = () => {
           await new Promise(resolve => setTimeout(resolve, 500));
           if (!hasNavigated.current) {
             hasNavigated.current = true;
-            router.replace('/screens/AccessPoint/Login/Login');
+            router.replace('/screens/AccessPoint/components/Login/Login');
           }
         }
       } catch (error) {
@@ -71,7 +71,7 @@ const SplashScreen: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 1000));
         if (!hasNavigated.current) {
           hasNavigated.current = true;
-          router.replace('/screens/AccessPoint/Login/Login');
+          router.replace('/screens/AccessPoint/components/Login/Login');
         }
       }
     };
