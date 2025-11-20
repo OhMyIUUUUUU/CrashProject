@@ -38,6 +38,28 @@ export default function Login() {
     return () => unsubscribe();
   }, []);
 
+  const attemptLocalLogin = async (contextMessage?: string) => {
+    try {
+      const localUser = await StorageService.verifyCredentials(email, password);
+
+      if (!localUser) {
+        return false;
+      }
+
+      await StorageService.saveUserSession(localUser);
+      await loadUser();
+      router.replace('/screens/Home/Home');
+
+      if (contextMessage) {
+        Alert.alert('Logged In', `${contextMessage} Signed in locally instead.`);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('Local login attempt failed:', error);
+      return false;
+    }
+  };
+
   // Handle Login
   const handleLogin = async () => {
     if (!email || !password) {
@@ -55,7 +77,10 @@ export default function Login() {
       });
       
       if (error) {
-        Alert.alert('Login Failed', error.message);
+        const fallbackUsed = await attemptLocalLogin(error.message);
+        if (!fallbackUsed) {
+          Alert.alert('Login Failed', error.message);
+        }
         setLoading(false);
         return;
       }
@@ -100,7 +125,10 @@ export default function Login() {
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      const fallbackUsed = await attemptLocalLogin('Unable to reach the server.');
+      if (!fallbackUsed) {
+        Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      }
     }
     
     setLoading(false);

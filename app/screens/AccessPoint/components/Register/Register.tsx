@@ -5,7 +5,7 @@ import barangay from 'barangay';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, InteractionManager, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { StorageService, UserData } from '../../../../../utils/storage';
 import { ValidationRules } from '../../../../../utils/validation';
@@ -124,6 +124,82 @@ const Register: React.FC = () => {
     setResendTimer(0);
   };
 
+  const buildUserData = useCallback((): UserData => {
+    return {
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      gender: formData.gender,
+      birthdate: formData.birthdate,
+      emergencyContactName: formData.emergencyContactName.trim(),
+      emergencyContactNumber: formData.emergencyContactNumber.trim(),
+      region: formData.region,
+      city: formData.city,
+      barangay: formData.barangay,
+      password: formData.password,
+    };
+  }, [formData]);
+
+  const persistEmergencyContact = useCallback(async () => {
+    if (formData.emergencyContactName && formData.emergencyContactNumber) {
+      try {
+        await StorageService.addEmergencyContact({
+          id: Date.now().toString(),
+          name: formData.emergencyContactName.trim(),
+          number: formData.emergencyContactNumber.trim(),
+        });
+      } catch (error) {
+        console.warn('Failed to persist emergency contact locally:', error);
+      }
+    }
+  }, [formData.emergencyContactName, formData.emergencyContactNumber]);
+
+  const navigateToHome = useCallback(() => {
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        try {
+          router.replace('/screens/Home/Home');
+        } catch (error) {
+          console.error('Navigation error:', error);
+        }
+      });
+    });
+  }, [router]);
+
+  const completeLocalRegistration = useCallback(
+    async (reason: 'email' | 'network'): Promise<boolean> => {
+      try {
+        const userData = buildUserData();
+        const success = await registerUser(userData);
+
+        if (!success) {
+          setErrors(prev => ({
+            ...prev,
+            general: 'This email or phone number is already registered locally.',
+          }));
+          return false;
+        }
+
+        await persistEmergencyContact();
+
+        const message =
+          reason === 'email'
+            ? "We couldn't send the confirmation email, but your account was created locally and you're now signed in."
+            : 'We saved your details locally so you can keep using the app even without email verification.';
+
+        Alert.alert('Registration Complete', message);
+        navigateToHome();
+        return true;
+      } catch (error: any) {
+        console.error('Local registration fallback failed:', error);
+        Alert.alert('Registration Error', error.message || 'Unable to complete registration locally.');
+        return false;
+      }
+    },
+    [buildUserData, registerUser, persistEmergencyContact, navigateToHome]
+  );
+
   const handleVerifyOtp = useCallback(async () => {
     if (otpCode.length !== 6) {
       setOtpError('Please enter the complete 6-digit code');
@@ -161,49 +237,28 @@ const Register: React.FC = () => {
       return;
     }
 
-    if (data.session) {
-      // Save user data to local storage after OTP verification
-      try {
-        const userData: UserData = {
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          gender: formData.gender,
-          birthdate: formData.birthdate,
-          emergencyContactName: formData.emergencyContactName.trim(),
-          emergencyContactNumber: formData.emergencyContactNumber.trim(),
-          region: formData.region,
-          city: formData.city,
-          barangay: formData.barangay,
-          password: formData.password, // Note: This is for local storage compatibility
-        };
+      if (data.session) {
+        // Save user data to local storage after OTP verification
+        try {
+          const userData = buildUserData();
 
-        // Save to local storage and update AuthContext
-        await registerUser(userData);
-      } catch (error) {
-        console.error('Error saving user data:', error);
-      }
+          // Save to local storage and update AuthContext
+          await registerUser(userData);
+        } catch (error) {
+          console.error('Error saving user data:', error);
+        }
 
       closeOtpModal();
       // Wait for modal to close before navigating
       setTimeout(() => {
-        try {
-          router.replace('/screens/Home/Home');
-          // Show success message after navigation
-          setTimeout(() => {
-            Alert.alert('Success', 'Account verified successfully!');
-          }, 300);
-        } catch (error) {
-          console.error('Navigation error:', error);
-          // Retry navigation after a longer delay if it fails
-          setTimeout(() => {
-            router.replace('/screens/Home/Home');
-          }, 500);
-        }
+        navigateToHome();
+        // Show success message after navigation
+        setTimeout(() => {
+          Alert.alert('Success', 'Account verified successfully!');
+        }, 300);
       }, 300);
     }
-  }, [otpCode, router, verificationEmail, formData, registerUser]);
+  }, [otpCode, navigateToHome, verificationEmail, buildUserData, registerUser]);
 
   const handleResendOtp = useCallback(async () => {
     if (resendTimer > 0 || !verificationEmail) return;
@@ -447,6 +502,19 @@ const Register: React.FC = () => {
       });
 
       if (authError) {
+        const isEmailDeliveryIssue =
+          authError.message?.toLowerCase().includes('confirmation email') ||
+          authError.message?.toLowerCase().includes('smtp') ||
+          authError.status === 500;
+
+        if (isEmailDeliveryIssue) {
+          const handled = await completeLocalRegistration('email');
+          setLoading(false);
+          if (handled) {
+            return;
+          }
+        }
+
         Alert.alert('Registration Failed', authError.message);
         setErrors({ general: authError.message });
         setLoading(false);
@@ -486,16 +554,7 @@ const Register: React.FC = () => {
         // Continue anyway since auth was successful
       }
 
-      // Ensure emergency contact shows on Home by saving it to contacts list
-      if (formData.emergencyContactName && formData.emergencyContactNumber) {
-        try {
-          await StorageService.addEmergencyContact({
-            id: Date.now().toString(),
-            name: formData.emergencyContactName.trim(),
-            number: formData.emergencyContactNumber.trim(),
-          });
-        } catch {}
-      }
+      await persistEmergencyContact();
 
       // Send OTP and show OTP modal
       // Note: Supabase signUp may have already sent a confirmation email
@@ -526,12 +585,16 @@ const Register: React.FC = () => {
       
       return;
     } catch (error: any) {
-      Alert.alert('Registration Error', error.message || 'An error occurred during registration. Please try again.');
-      setErrors({ general: error.message || 'An error occurred during registration. Please try again.' });
+      console.error('Registration error:', error);
+      const fallbackSucceeded = await completeLocalRegistration('network');
+      if (!fallbackSucceeded) {
+        Alert.alert('Registration Error', error.message || 'An error occurred during registration. Please try again.');
+        setErrors({ general: error.message || 'An error occurred during registration. Please try again.' });
+      }
     } finally {
       setLoading(false);
     }
-  }, [formData, router, validateForm]);
+  }, [formData, router, validateForm, completeLocalRegistration, persistEmergencyContact]);
 
   const handleGoToLogin = useCallback(() => {
     router.back();
@@ -804,15 +867,23 @@ const Register: React.FC = () => {
             {otpError ? <Text style={styles.otpError}>{otpError}</Text> : null}
 
             <TouchableOpacity
+              style={styles.otpActionWrapper}
               onPress={handleVerifyOtp}
               disabled={otpLoading || otpCode.length !== 6}
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={otpCode.length === 6 && !otpLoading ? ['#FF6B6B', '#FF8787', '#FFA8A8'] : ['#E0E0E0', '#E0E0E0']}
+                colors={
+                  otpCode.length === 6 && !otpLoading
+                    ? ['#2ECC71', '#27AE60', '#1E8449']
+                    : ['#C8E6C9', '#A5D6A7']
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[styles.button, (otpLoading || otpCode.length !== 6) && styles.buttonDisabled]}
+                style={[
+                  styles.button,
+                  (otpLoading || otpCode.length !== 6) && styles.buttonDisabled,
+                ]}
               >
                 {otpLoading ? (
                   <ActivityIndicator color="#fff" />

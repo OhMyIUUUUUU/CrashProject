@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import CustomTabBar from '../../components/CustomTabBar';
+import { supabase } from '../../lib/supabase';
+import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
 interface UserProfileData {
@@ -140,7 +140,9 @@ const Profile: React.FC = () => {
     value,
   }) => (
     <View style={styles.infoCard}>
-      <Ionicons name={icon as any} size={20} color="#FF6B6B" style={styles.infoIcon} />
+      <View style={styles.infoIconContainer}>
+        <Ionicons name={icon as any} size={22} color="#FF6B6B" />
+      </View>
       <View style={styles.infoContent}>
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value || 'N/A'}</Text>
@@ -175,8 +177,13 @@ const Profile: React.FC = () => {
         >
           {/* Profile Header */}
           <View style={styles.profileHeader}>
-            <View style={styles.avatarLarge}>
-              <Text style={styles.avatarLargeText}>{getInitials()}</Text>
+            <View style={styles.profileAvatarContainer}>
+              <View style={styles.avatarLarge}>
+                <Text style={styles.avatarLargeText}>{getInitials()}</Text>
+              </View>
+              <View style={styles.avatarBadge}>
+                <Ionicons name="checkmark" size={16} color="#fff" />
+              </View>
             </View>
             <Text style={styles.profileName}>{getFullName()}</Text>
             <Text style={styles.profileEmail}>{profileData?.email || 'No email'}</Text>
@@ -188,7 +195,7 @@ const Profile: React.FC = () => {
             <View style={styles.infoSection}>
               <InfoCard icon="person-outline" label="First Name" value={profileData?.first_name || 'N/A'} />
               <InfoCard icon="person-outline" label="Last Name" value={profileData?.last_name || 'N/A'} />
-              <InfoCard icon="person-outline" label="Gender" value={profileData?.sex || 'N/A'} />
+              <InfoCard icon="male-female-outline" label="Gender" value={profileData?.sex || 'N/A'} />
               <InfoCard
                 icon="calendar-outline"
                 label="Birthdate"
@@ -245,9 +252,9 @@ const Profile: React.FC = () => {
           <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleLogout}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <Ionicons name="log-out-outline" size={20} color="#fff" />
+            <Ionicons name="log-out-outline" size={22} color="#fff" />
             <Text style={styles.logoutButtonText}>Logout</Text>
           </TouchableOpacity>
         </ScrollView>

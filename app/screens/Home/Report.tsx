@@ -6,7 +6,7 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import CustomTabBar from '../../components/CustomTabBar';
+import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
 type RoleType = 'victim' | 'witness' | null;

@@ -3,25 +3,24 @@ import { useEffect } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
+import { StorageService } from '../utils/storage'
 
 export default function Index() {
   const router = useRouter()
-  const { loadUser, isAuthenticated } = useAuth()
+  const { loadUser } = useAuth()
 
   useEffect(() => {
     const initializeAuth = async () => {
-      // Load user from local storage
       await loadUser()
 
-      // Check Supabase session
-      const { data: { session } } = await supabase.auth.getSession()
+      const [hasLocalSession, { data: { session } }] = await Promise.all([
+        StorageService.isLoggedIn(),
+        supabase.auth.getSession(),
+      ])
 
-      // Navigate based on auth status
-      if (session && isAuthenticated) {
-        // User is logged in - navigate to Home
+      if (session || hasLocalSession) {
         router.replace('/screens/Home/Home')
       } else {
-        // User is not logged in - navigate to Login
         router.replace('/screens/AccessPoint/components/Login/Login')
       }
     }
@@ -29,10 +28,11 @@ export default function Index() {
     initializeAuth()
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
       await loadUser()
-      
-      if (session && isAuthenticated) {
+      const hasLocalSession = await StorageService.isLoggedIn()
+
+      if (session || hasLocalSession) {
         router.replace('/screens/Home/Home')
       } else {
         router.replace('/screens/AccessPoint/components/Login/Login')
@@ -40,7 +40,7 @@ export default function Index() {
     })
 
     return () => subscription.unsubscribe()
-  }, [router, isAuthenticated, loadUser])
+  }, [router, loadUser])
 
   // Show loading while checking auth
   return (
