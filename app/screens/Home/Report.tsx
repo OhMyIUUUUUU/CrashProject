@@ -1,11 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// Lazy load ImagePicker to handle cases where native module isn't available
+let ImagePicker: any = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (error) {
+  console.warn('ImagePicker not available:', error);
+}
+import { ChatBox } from '../AccessPoint/components/ChatBox';
+import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
@@ -49,21 +58,34 @@ const Report: React.FC = () => {
   };
 
   const handlePickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Media library permission is required to attach images/videos.');
+    if (!ImagePicker) {
+      Alert.alert(
+        'Feature Unavailable',
+        'Image picker is not available. Please rebuild the app using:\n\nnpx expo run:android\n\nor\n\nnpx expo run:ios'
+      );
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Media library permission is required to attach images/videos.');
+        return;
+      }
 
-    if (!result.canceled && result.assets) {
-      const newAttachments = result.assets.map(asset => asset.uri);
-      setAttachments([...attachments, ...newAttachments]);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newAttachments = result.assets.map(asset => asset.uri);
+        setAttachments([...attachments, ...newAttachments]);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to open image picker. Please try again.');
     }
   };
 
@@ -107,6 +129,12 @@ const Report: React.FC = () => {
     }, 1500);
   };
 
+  const handleSendMessage = (message: string) => {
+    // TODO: Replace with actual API call to send message
+    // Example: await supabase.from('messages').insert({ message, user_id: user?.id });
+    console.log('Message sent:', message);
+  };
+
   return (
     <LinearGradient
       colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
@@ -143,87 +171,31 @@ const Report: React.FC = () => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Category Report Grid */}
+          {/* Category Report Grid - Hexagonal Pattern */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Category Report</Text>
-            <View style={styles.categoryGridContainer}>
-              <View style={styles.categoryGrid}>
-                {/* Top Left - Police */}
-                <TouchableOpacity
-                  style={[styles.categoryButton, styles.topLeftCurve]}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={['#FFFFFF', '#FFE5E5']}
-                    style={styles.categoryButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="shield" size={40} color="#FF6B6B" />
-                    <Text style={styles.categoryButtonText}>Police</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Top Right - Fire & Safety */}
-                <TouchableOpacity
-                  style={[styles.categoryButton, styles.topRightCurve]}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={['#FFFFFF', '#FFE5E5']}
-                    style={styles.categoryButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="flame" size={40} color="#FF6B6B" />
-                    <Text style={styles.categoryButtonText}>Fire & Safety</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Bottom Left - Health Care */}
-                <TouchableOpacity
-                  style={[styles.categoryButton, styles.bottomLeftCurve]}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={['#FFFFFF', '#FFE5E5']}
-                    style={styles.categoryButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="medical" size={40} color="#FF6B6B" />
-                    <Text style={styles.categoryButtonText}>Health Care</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Bottom Right - Other */}
-                <TouchableOpacity
-                  style={[styles.categoryButton, styles.bottomRightCurve]}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={['#FFFFFF', '#FFE5E5']}
-                    style={styles.categoryButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={40} color="#FF6B6B" />
-                    <Text style={styles.categoryButtonText}>Other</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Central FAB Button */}
-                <View style={styles.categoryFabButton}>
-                  <LinearGradient
-                    colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
-                    style={styles.categoryFabGradient}
-                    start={{ x: 0.5, y: 0.5 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="shield" size={28} color="#FFFFFF" style={styles.categoryFabIcon} />
-                  </LinearGradient>
-                </View>
-              </View>
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>Category Report</Text>
+              <TouchableOpacity
+                style={styles.guideButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Category Guide',
+                    'Violence - Warning icon\nThreat - Alert circle icon\nTheft - Bag icon\nVandalism - Construct icon\nSuspicious - Eye icon\nEmergency - Shield icon\nOther - Three dots icon (center)',
+                    [{ text: 'OK' }]
+                  );
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="help-circle" size={26} color="#FF6B6B" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.hexagonalGridContainer}>
+              <HexagonalGrid
+                onHexagonPress={(index, label) => {
+                  console.log(`Selected category: ${label} (index: ${index})`);
+                  // You can add category selection logic here
+                }}
+              />
             </View>
           </View>
 
@@ -387,6 +359,9 @@ const Report: React.FC = () => {
             </View>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* ChatBox Component */}
+        <ChatBox onSendMessage={handleSendMessage} />
 
         {/* Bottom Navigation */}
         <CustomTabBar />
