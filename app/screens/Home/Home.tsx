@@ -1,8 +1,13 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { ChatBox } from '../AccessPoint/components/ChatBox';
-import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
+import { Alert, Animated, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ChatModal } from '../../components/ChatModal';
+import { FloatingChatHead } from '../../components/FloatingChatHead';
 import { useAuth } from '../../contexts/AuthContext';
+import { useActiveCase } from '../../hooks/useActiveCase';
+import { supabase } from '../../lib/supabase';
+import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -10,8 +15,49 @@ const buttonSize = Math.min(screenWidth * 0.6, 220);
 
 const Home: React.FC = () => {
   const { user, loadUser } = useAuth();
+  const { activeCase, cancelReport, checkActiveCase } = useActiveCase();
   const [isLoading, setIsLoading] = useState(true);
+  const [sendingSOS, setSendingSOS] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [chatModalVisible, setChatModalVisible] = useState(false);
+  const [isCaseMinimized, setIsCaseMinimized] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [sosCountdown, setSosCountdown] = useState(0);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sosCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Debug: Log active case changes
+  useEffect(() => {
+    if (activeCase) {
+      console.log('✅ Active Case Detected:', activeCase.report_id, activeCase.status);
+    } else {
+      console.log('❌ No Active Case');
+    }
+  }, [activeCase]);
+
+  // Request location permission when component mounts
+  useEffect(() => {
+    const requestLocationPermission = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Location permission not granted');
+        } else {
+          console.log('Location permission granted');
+        }
+      } catch (error) {
+        console.error('Error requesting location permission:', error);
+      }
+    };
+
+    requestLocationPermission();
+  }, []);
+
+  // Debug: Log active case changes
+  useEffect(() => {
+    console.log('Active Case State Changed:', activeCase);
+  }, [activeCase]);
 
   // Animation values for SOS button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -51,12 +97,6 @@ const Home: React.FC = () => {
     return () => pulse.stop();
   }, [pulseAnim]);
 
-  const handleSendMessage = (message: string) => {
-    // TODO: Replace with actual API call to send message
-    // Example: await supabase.from('messages').insert({ message, user_id: user?.id });
-    console.log('Message sent:', message);
-  };
-
   const handleSOSPressIn = useCallback(() => {
     Animated.spring(scaleAnim, {
       toValue: 0.95,
@@ -73,22 +113,395 @@ const Home: React.FC = () => {
     }).start();
   }, [scaleAnim]);
 
-  const handleSOSPress = useCallback(async () => {
-    try {
-      console.log('Opening phone dialer with 911...');
-      await Linking.openURL('tel:911');
-      console.log('Phone dialer opened successfully');
-    } catch (error) {
-      console.error('Error opening phone dialer:', error);
-      Alert.alert('Error', 'Failed to open phone dialer');
-    }
+  const handleCancelReport = useCallback(async () => {
+    if (!activeCase || cancelling || countdown > 0) return;
+
+    Alert.alert(
+      'Cancel Report',
+      'Are you sure you want to cancel this active case?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: () => {
+            // Start 5-second countdown
+            setCountdown(5);
+            setCancelling(true);
+
+            // Clear any existing interval
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current);
+            }
+
+            // Start countdown
+            countdownIntervalRef.current = setInterval(() => {
+              setCountdown((prev) => {
+                if (prev <= 1) {
+                  // Countdown finished, cancel the report
+                  if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current);
+                    countdownIntervalRef.current = null;
+                  }
+                  
+                  // Cancel the report
+                  cancelReport(activeCase.report_id).then((success) => {
+                    setCancelling(false);
+                    setCountdown(0);
+                    if (success) {
+                      Alert.alert('Success', 'Report has been cancelled successfully.');
+                    } else {
+                      Alert.alert('Error', 'Failed to cancel report. Please try again.');
+                    }
+                  });
+                  return 0;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+          },
+        },
+      ]
+    );
+  }, [activeCase, cancelling, cancelReport, countdown]);
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+      if (sosCountdownIntervalRef.current) {
+        clearInterval(sosCountdownIntervalRef.current);
+      }
+    };
   }, []);
 
+  const sendSOS = useCallback(async () => {
+    setSendingSOS(true);
 
+    try {
+      // 1. Fetch User ID from Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      const authUserId = session?.user?.id || null;
+      const userEmail = session?.user?.email || null;
 
+      if (!authUserId && !userEmail) {
+        Alert.alert('Error', 'Please log in to send SOS');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
 
+      // 2. Fetch User Info from database (try by user_id first, then by email)
+      let userInfo = null;
+      let reporterId = null;
+      let userError = null;
 
+      // Try to get user by user_id (matching Supabase auth user ID)
+      if (authUserId) {
+        const { data, error } = await supabase
+          .from('tbl_users')
+          .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
+          .eq('user_id', authUserId)
+          .single();
+        
+        if (data && !error) {
+          userInfo = data;
+          reporterId = data.user_id;
+        }
+      }
 
+      // If not found by user_id, try by email
+      if (!userInfo && userEmail) {
+        const { data, error } = await supabase
+          .from('tbl_users')
+          .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
+          .eq('email', userEmail)
+          .single();
+        
+        if (data && !error) {
+          userInfo = data;
+          reporterId = data.user_id;
+        } else {
+          userError = error;
+        }
+      }
+
+      if (!userInfo || !reporterId) {
+        console.error('Error fetching user info:', userError);
+        Alert.alert('Error', 'Unable to fetch user information. Please try again.');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
+
+      // 3. Fetch GPS Location
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Permission Required',
+          'Location permission is required to send SOS. Please enable it in settings.',
+          [{ text: 'OK' }]
+        );
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      const latitude = currentLocation.coords.latitude;
+      const longitude = currentLocation.coords.longitude;
+
+      // Create description with user info
+      const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
+      const description = `EMERGENCY SOS ALERT\n\n` +
+        `Reporter: ${userName}\n` +
+        `Phone: ${userInfo.phone || 'N/A'}\n` +
+        `Email: ${userInfo.email || 'N/A'}\n` +
+        `Emergency Contact: ${userInfo.emergency_contact_name || 'N/A'} (${userInfo.emergency_contact_number || 'N/A'})\n` +
+        `Address: ${userInfo.barangay || ''}, ${userInfo.city || ''}, ${userInfo.region || ''}\n` +
+        `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
+        `Role: Witness\n` +
+        `Time: ${new Date().toLocaleString()}`;
+
+      const now = new Date().toISOString();
+
+      // 4. Create report payload with default category "Emergency" and role "witness"
+      const reportPayload = {
+        reporter_id: reporterId,
+        assigned_office_id: null,
+        category: 'Emergency', // Default category
+        description: description,
+        status: 'pending',
+        latitude: latitude,
+        longitude: longitude,
+        remarks: `SOS triggered via mobile app. Role: Witness. User: ${userName}`,
+        created_at: now,
+        updated_at: now,
+      };
+
+      // 5. Send SOS report to database
+      const { data, error } = await supabase
+        .from('tbl_reports')
+        .insert([reportPayload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('SOS submission error:', error);
+        Alert.alert(
+          'Error',
+          'Failed to send SOS. Please try again.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        console.log('SOS submitted successfully:', data);
+        Alert.alert(
+          'SOS Sent Successfully',
+          'Your emergency SOS has been sent. Responders have been notified.',
+          [{ text: 'OK' }]
+        );
+        // Refresh active case after sending SOS
+        // Wait a moment for database to process, then refresh
+        setTimeout(async () => {
+          console.log('🔄 Refreshing active case after SOS submission...');
+          await checkActiveCase();
+          console.log('✅ Active case refresh completed');
+        }, 500);
+      }
+    } catch (error: any) {
+      console.error('Error sending SOS:', error);
+      Alert.alert(
+        'Error',
+        'Failed to send SOS. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSendingSOS(false);
+      setSosCountdown(0);
+    }
+  }, [checkActiveCase]);
+
+  const handleSOSPress = useCallback(async () => {
+    if (sendingSOS) return;
+
+    console.log('🔴 SOS Button Clicked!');
+    
+    // Check database directly for active case (don't rely on state)
+    const { data: { session } } = await supabase.auth.getSession();
+    const authUserId = session?.user?.id || null;
+    const userEmail = session?.user?.email || null;
+
+    let reporterId = null;
+    if (authUserId) {
+      const { data: userData } = await supabase
+        .from('tbl_users')
+        .select('user_id')
+        .eq('user_id', authUserId)
+        .single();
+      if (userData) reporterId = userData.user_id;
+    }
+
+    if (!reporterId && userEmail) {
+      const { data: userData } = await supabase
+        .from('tbl_users')
+        .select('user_id')
+        .eq('email', userEmail)
+        .single();
+      if (userData) reporterId = userData.user_id;
+    }
+
+    let currentActiveCase = activeCase; // Use current state first
+    
+    // If no activeCase in state, check database directly
+    if (!currentActiveCase && reporterId) {
+      const { data: reports } = await supabase
+        .from('tbl_reports')
+        .select('*')
+        .eq('reporter_id', reporterId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const activeReports = reports?.filter(report => {
+        const status = report.status?.toLowerCase();
+        return status === 'pending' || (status !== 'resolved' && status !== 'cancelled');
+      }) || [];
+
+      if (activeReports.length > 0) {
+        currentActiveCase = activeReports[0] as any;
+      }
+    }
+
+    console.log('🔴 Current Active Case:', currentActiveCase);
+
+    // ALWAYS check for active case first - if exists, show it immediately
+    if (currentActiveCase && currentActiveCase.report_id) {
+      console.log('✅ Showing Active Case Popup');
+      
+      // Fetch office name if needed
+      let officeName = (currentActiveCase as any).office_name;
+      if (!officeName && currentActiveCase.assigned_office_id) {
+        const { data: officeData } = await supabase
+          .from('tbl_police_offices')
+          .select('office_name')
+          .eq('office_id', currentActiveCase.assigned_office_id)
+          .single();
+        if (officeData) officeName = officeData.office_name;
+      }
+      
+      const statusEmoji = currentActiveCase.status === 'pending' ? '🟠' : 
+                         currentActiveCase.status === 'responding' ? '🟢' : '🔵';
+      
+      const caseInfo = `🚨 ACTIVE CASE DETECTED\n\n` +
+        `${statusEmoji} Status: ${currentActiveCase.status.toUpperCase()}\n` +
+        `📁 Category: ${currentActiveCase.category}\n` +
+        `📅 Created: ${new Date(currentActiveCase.created_at).toLocaleString()}\n` +
+        (officeName ? `🏢 Office: ${officeName}\n` : '🏢 Office: Not assigned yet\n') +
+        (currentActiveCase.description ? `\n📝 Description:\n${currentActiveCase.description.substring(0, 120)}${currentActiveCase.description.length > 120 ? '...' : ''}` : '');
+      
+      console.log('📱 Displaying Alert with case info:', caseInfo);
+      
+      Alert.alert(
+        'Active Case',
+        caseInfo,
+        [
+          { 
+            text: '💬 Open Chat', 
+            onPress: () => {
+              console.log('Opening chat');
+              setChatModalVisible(true);
+            }
+          },
+          { 
+            text: '👁️ View Details', 
+            onPress: () => {
+              console.log('Viewing details');
+              setTimeout(() => {
+                scrollViewRef.current?.scrollTo({ y: 400, animated: true });
+              }, 100);
+            }
+          },
+          { 
+            text: '🗑️ Cancel Report', 
+            onPress: () => {
+              console.log('Cancelling report');
+              handleCancelReport();
+            }, 
+            style: 'destructive' 
+          },
+          { text: 'Close', style: 'cancel' }
+        ],
+        { cancelable: true }
+      );
+      console.log('✅ Alert should be displayed now');
+      return; // Stop here - don't proceed with SOS
+    }
+
+    console.log('❌ No active case found, starting SOS countdown');
+    // No active case - start countdown before sending SOS
+    
+    // Start 5-second countdown
+    setSosCountdown(5);
+    setSendingSOS(true);
+
+    // Clear any existing interval
+    if (sosCountdownIntervalRef.current) {
+      clearInterval(sosCountdownIntervalRef.current);
+    }
+
+    // Show alert with countdown
+    Alert.alert(
+      'Sending SOS',
+      'Emergency SOS will be sent in 5 seconds. Tap Cancel to stop.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            // Cancel countdown
+            if (sosCountdownIntervalRef.current) {
+              clearInterval(sosCountdownIntervalRef.current);
+              sosCountdownIntervalRef.current = null;
+            }
+            setSosCountdown(0);
+            setSendingSOS(false);
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: () => {
+        // Cancel countdown if alert is dismissed
+        if (sosCountdownIntervalRef.current) {
+          clearInterval(sosCountdownIntervalRef.current);
+          sosCountdownIntervalRef.current = null;
+        }
+        setSosCountdown(0);
+        setSendingSOS(false);
+      }}
+    );
+
+    // Start countdown
+    sosCountdownIntervalRef.current = setInterval(() => {
+      setSosCountdown((prev) => {
+        if (prev <= 1) {
+          // Countdown finished, send SOS
+          if (sosCountdownIntervalRef.current) {
+            clearInterval(sosCountdownIntervalRef.current);
+            sosCountdownIntervalRef.current = null;
+          }
+          
+          // Send SOS
+          sendSOS();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return; // Stop here, countdown will trigger sendSOS
+  }, [sendingSOS, activeCase, handleCancelReport, checkActiveCase, sendSOS]);
 
   // Show loading only briefly, then render even if user data is incomplete
   if (isLoading) {
@@ -111,7 +524,10 @@ const Home: React.FC = () => {
             showsVerticalScrollIndicator={false}
           >
           {/* SOS Button */}
-          <View style={styles.sosButtonContainer}>
+          <View style={[
+            styles.sosButtonContainer,
+            activeCase && !isCaseMinimized && styles.sosButtonContainerExpanded
+          ]}>
             <Animated.View
               style={[
                 {
@@ -122,15 +538,23 @@ const Home: React.FC = () => {
               ]}
             >
               <TouchableOpacity
-                onPress={handleSOSPress}
+                onPress={() => {
+                  console.log('🔴 Button Pressed - Active Case:', activeCase);
+                  handleSOSPress();
+                }}
                 onPressIn={handleSOSPressIn}
                 onPressOut={handleSOSPressOut}
                 activeOpacity={1}
-                style={[styles.sosButtonNeumorphic, {
-                  width: buttonSize,
-                  height: buttonSize,
-                  borderRadius: buttonSize / 2,
-                }]}
+                disabled={sendingSOS || sosCountdown > 0}
+                style={[
+                  styles.sosButtonNeumorphic,
+                  {
+                    width: buttonSize,
+                    height: buttonSize,
+                    borderRadius: buttonSize / 2,
+                    opacity: sendingSOS ? 0.7 : 1,
+                  }
+                ]}
               >
                 <View style={[styles.sosButtonInner, {
                   width: buttonSize * 0.85,
@@ -138,26 +562,150 @@ const Home: React.FC = () => {
                   borderRadius: (buttonSize * 0.85) / 2,
                 }]}>
                   <View style={styles.sosButtonContent}>
-                    <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
-                      SOS
-                    </Text>
+                    {sosCountdown > 0 ? (
+                      <>
+                        <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
+                          {sosCountdown}
+                        </Text>
+                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08 }]}>
+                          Cancel?
+                        </Text>
+                      </>
+                    ) : sendingSOS ? (
+                      <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.15 }]}>
+                        Sending...
+                      </Text>
+                    ) : (
+                      <>
+                        <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
+                          SOS
+                        </Text>
+                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08 }]}>
+                          Emergency
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </View>
               </TouchableOpacity>
             </Animated.View>
           </View>
 
-          {/* No Active Case Label */}
-          <View style={styles.noActiveCaseContainer}>
-            <Text style={styles.noActiveCaseText}>No Active Case</Text>
-          </View>
+          {/* Active Case Info or No Active Case Label */}
+          {activeCase ? (
+            <View style={styles.activeCaseContainer}>
+              <View style={styles.activeCaseHeader}>
+                <View style={styles.activeCaseTitleRow}>
+                  <Ionicons name="alert-circle" size={24} color="#FF6B6B" />
+                  <Text style={styles.activeCaseTitle}>Active Case</Text>
+                  <View style={[styles.statusBadge, { 
+                    backgroundColor: activeCase.status === 'pending' ? '#FF9500' : 
+                                    activeCase.status === 'responding' ? '#34C759' : 
+                                    '#007AFF' 
+                  }]}>
+                    <Text style={styles.statusText}>{activeCase.status.toUpperCase()}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsCaseMinimized(!isCaseMinimized)}
+                  style={styles.minimizeButton}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons 
+                    name={isCaseMinimized ? "chevron-down" : "chevron-up"} 
+                    size={24} 
+                    color="#666" 
+                  />
+                </TouchableOpacity>
+              </View>
+              
+              {!isCaseMinimized && (
+                <View style={styles.caseDetailsContainer}>
+                <View style={styles.caseDetailRow}>
+                  <Ionicons name="folder" size={16} color="#666" />
+                  <Text style={styles.caseDetailLabel}>Category:</Text>
+                  <Text style={styles.caseDetailValue}>{activeCase.category}</Text>
+                </View>
+                
+                <View style={styles.caseDetailRow}>
+                  <Ionicons name="time" size={16} color="#666" />
+                  <Text style={styles.caseDetailLabel}>Created:</Text>
+                  <Text style={styles.caseDetailValue}>
+                    {new Date(activeCase.created_at).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </Text>
+                </View>
+                
+                {activeCase.office_name && (
+                  <View style={styles.caseDetailRow}>
+                    <Ionicons name="business" size={16} color="#666" />
+                    <Text style={styles.caseDetailLabel}>Assigned Office:</Text>
+                    <Text style={styles.caseDetailValue}>{activeCase.office_name}</Text>
+                  </View>
+                )}
+                
+                {activeCase.description && (
+                  <View style={styles.caseDescriptionContainer}>
+                    <Text style={styles.caseDescriptionLabel}>Description:</Text>
+                    <Text style={styles.caseDescriptionText} numberOfLines={3}>
+                      {activeCase.description}
+                    </Text>
+                  </View>
+                )}
+                
+                {activeCase.latitude && activeCase.longitude && (
+                  <View style={styles.caseDetailRow}>
+                    <Ionicons name="location" size={16} color="#666" />
+                    <Text style={styles.caseDetailLabel}>Location:</Text>
+                    <Text style={styles.caseDetailValue}>
+                      {Number(activeCase.latitude).toFixed(4)}, {Number(activeCase.longitude).toFixed(4)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              )}
+              
+              <TouchableOpacity
+                style={styles.cancelReportButton}
+                onPress={handleCancelReport}
+                disabled={cancelling || countdown > 0}
+              >
+                <Ionicons name="close-circle" size={20} color="#FF3B30" />
+                <Text style={styles.cancelReportButtonText}>
+                  {countdown > 0 ? `Cancelling in ${countdown}s...` : cancelling ? 'Cancelling...' : 'Cancel Report'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.noActiveCaseContainer}>
+              <Ionicons name="checkmark-circle" size={48} color="#34C759" />
+              <Text style={styles.noActiveCaseText}>No Active Case</Text>
+              <Text style={styles.noActiveCaseSubtext}>You can send an SOS or submit a report</Text>
+            </View>
+          )}
         </ScrollView>
-
-        {/* ChatBox Component */}
-        <ChatBox onSendMessage={handleSendMessage} />
 
         {/* Bottom Navigation */}
         <CustomTabBar />
+
+        {/* Floating Chat Head - Only show when active case exists */}
+        {activeCase && (
+          <FloatingChatHead
+            onPress={() => setChatModalVisible(true)}
+            unreadCount={0} // TODO: Calculate unread count from messages
+          />
+        )}
+
+        {/* Chat Modal */}
+        <ChatModal
+          visible={chatModalVisible}
+          onClose={() => setChatModalVisible(false)}
+          activeCase={activeCase}
+        />
       </View>
     </View>
   );

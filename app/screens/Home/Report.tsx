@@ -3,8 +3,9 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useActiveCase } from '../../hooks/useActiveCase';
 
 // Lazy load ImagePicker to handle cases where native module isn't available
 let ImagePicker: any = null;
@@ -16,19 +17,43 @@ try {
 import { ChatBox } from '../AccessPoint/components/ChatBox';
 import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
+import { FloatingChatHead } from '../../components/FloatingChatHead';
+import { ChatModal } from '../../components/ChatModal';
 import { styles } from './styles';
 
 type RoleType = 'victim' | 'witness' | null;
 
 const Report: React.FC = () => {
   const router = useRouter();
+  const { activeCase, cancelReport } = useActiveCase();
   const [description, setDescription] = useState('');
   const [role, setRole] = useState<RoleType>('victim');
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [chatModalVisible, setChatModalVisible] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [locationText, setLocationText] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
+
+  // Load active case data into form when active case exists
+  useEffect(() => {
+    if (activeCase) {
+      setDescription(activeCase.description || '');
+      // Extract role from remarks if available, otherwise default to 'witness'
+      const roleMatch = activeCase.remarks?.match(/Role:\s*(\w+)/i);
+      setRole(roleMatch ? (roleMatch[1].toLowerCase() as RoleType) : 'witness');
+      if (activeCase.latitude && activeCase.longitude) {
+        setLocation({
+          latitude: Number(activeCase.latitude),
+          longitude: Number(activeCase.longitude),
+        });
+        setLocationText(`Latitude: ${Number(activeCase.latitude).toFixed(6)}, Longitude: ${Number(activeCase.longitude).toFixed(6)}`);
+      }
+    }
+  }, [activeCase]);
 
   const handleGetLocation = async () => {
     setGettingLocation(true);
@@ -93,7 +118,79 @@ const Report: React.FC = () => {
     setAttachments(attachments.filter((_, i) => i !== index));
   };
 
+  const handleCancelReport = async () => {
+    if (!activeCase || cancelling || countdown > 0) return;
+
+    Alert.alert(
+      'Cancel Report',
+      'Are you sure you want to cancel this active case?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: () => {
+            // Start 5-second countdown
+            setCountdown(5);
+            setCancelling(true);
+
+            // Clear any existing interval
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current);
+            }
+
+            // Start countdown
+            countdownIntervalRef.current = setInterval(() => {
+              setCountdown((prev) => {
+                if (prev <= 1) {
+                  // Countdown finished, cancel the report
+                  if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current);
+                    countdownIntervalRef.current = null;
+                  }
+                  
+                  // Cancel the report
+                  cancelReport(activeCase.report_id).then((success) => {
+                    setCancelling(false);
+                    setCountdown(0);
+                    if (success) {
+                      Alert.alert('Success', 'Report has been cancelled successfully.');
+                      // Clear form
+                      setDescription('');
+                      setRole('victim');
+                      setLocation(null);
+                      setLocationText('');
+                      setAttachments([]);
+                    } else {
+                      Alert.alert('Error', 'Failed to cancel report. Please try again.');
+                    }
+                  });
+                  return 0;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+          },
+        },
+      ]
+    );
+  };
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
+
   const handleSubmit = async () => {
+    if (activeCase) {
+      Alert.alert('Error', 'You have an active case. Please cancel it first before submitting a new report.');
+      return;
+    }
+
     if (!description.trim()) {
       Alert.alert('Error', 'Please provide a description');
       return;
@@ -204,13 +301,14 @@ const Report: React.FC = () => {
             <Text style={styles.descriptionSectionTitle}>Description</Text>
             <View style={styles.descriptionContainer}>
               <TextInput
-                style={styles.descriptionInput}
+                style={[styles.descriptionInput, activeCase && styles.readOnlyInput]}
                 placeholder="What is happening? Who is involved? Where exactly are you/it located?"
                 placeholderTextColor="#999"
                 multiline
                 numberOfLines={8}
                 value={description}
-                onChangeText={setDescription}
+                onChangeText={activeCase ? undefined : setDescription}
+                editable={!activeCase}
                 textAlignVertical="top"
               />
             </View>
@@ -224,8 +322,10 @@ const Report: React.FC = () => {
                 style={[
                   styles.roleButton,
                   role === 'victim' && styles.roleButtonSelected,
+                  activeCase && styles.readOnlyButton,
                 ]}
-                onPress={() => setRole('victim')}
+                onPress={activeCase ? undefined : () => setRole('victim')}
+                disabled={!!activeCase}
                 activeOpacity={0.7}
               >
                 <Ionicons
@@ -252,8 +352,10 @@ const Report: React.FC = () => {
                 style={[
                   styles.roleButton,
                   role === 'witness' && styles.roleButtonSelected,
+                  activeCase && styles.readOnlyButton,
                 ]}
-                onPress={() => setRole('witness')}
+                onPress={activeCase ? undefined : () => setRole('witness')}
+                disabled={!!activeCase}
                 activeOpacity={0.7}
               >
                 <Ionicons
@@ -283,12 +385,12 @@ const Report: React.FC = () => {
             <Text style={styles.sectionTitle}>Auto-Get GPS Location</Text>
             <View style={styles.locationContainer}>
               <TextInput
-                style={styles.locationInput}
+                style={[styles.locationInput, activeCase && styles.readOnlyInput]}
                 placeholder="Location will appear here when retrieved..."
                 placeholderTextColor="#999"
                 value={locationText}
                 editable={false}
-                onPressIn={handleGetLocation}
+                onPressIn={activeCase ? undefined : handleGetLocation}
               />
               {gettingLocation && (
                 <View style={styles.locationLoading}>
@@ -303,8 +405,9 @@ const Report: React.FC = () => {
             <Text style={styles.sectionTitle}>Attachments</Text>
             <View style={styles.attachmentSection}>
               <TouchableOpacity
-                style={styles.attachmentButton}
-                onPress={handlePickImage}
+                style={[styles.attachmentButton, activeCase && styles.readOnlyButton]}
+                onPress={activeCase ? undefined : handlePickImage}
+                disabled={!!activeCase}
                 activeOpacity={0.7}
               >
                 <LinearGradient
@@ -337,27 +440,43 @@ const Report: React.FC = () => {
             </View>
           </View>
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={styles.submitButton}
-            onPress={handleSubmit}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={['#FF5252', '#FF6B6B', '#FF8787']}
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            />
-            <Text style={styles.submitButtonText}>Submit</Text>
-            <View style={styles.submitButtonIcon}>
-              <Ionicons 
-                name="checkmark" 
-                size={20} 
-                color="#FF5252" 
+          {/* Submit Button or Cancel Report Button */}
+          {activeCase ? (
+            <TouchableOpacity
+              style={styles.cancelReportButton}
+              onPress={handleCancelReport}
+              disabled={cancelling || countdown > 0}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.cancelReportButtonText}>
+                {countdown > 0 ? `Cancelling in ${countdown}s...` : cancelling ? 'Cancelling...' : 'Cancel Report'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={handleSubmit}
+              disabled={submitting}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#FF5252', '#FF6B6B', '#FF8787']}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
               />
-            </View>
-          </TouchableOpacity>
+              <Text style={styles.submitButtonText}>
+                {submitting ? 'Submitting...' : 'Submit'}
+              </Text>
+              <View style={styles.submitButtonIcon}>
+                <Ionicons 
+                  name="checkmark" 
+                  size={20} 
+                  color="#FF5252" 
+                />
+              </View>
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
         {/* ChatBox Component */}
@@ -365,6 +484,21 @@ const Report: React.FC = () => {
 
         {/* Bottom Navigation */}
         <CustomTabBar />
+
+        {/* Floating Chat Head - Only show when active case exists */}
+        {activeCase && (
+          <FloatingChatHead
+            onPress={() => setChatModalVisible(true)}
+            unreadCount={0} // TODO: Calculate unread count from messages
+          />
+        )}
+
+        {/* Chat Modal */}
+        <ChatModal
+          visible={chatModalVisible}
+          onClose={() => setChatModalVisible(false)}
+          activeCase={activeCase}
+        />
       </View>
     </LinearGradient>
   );

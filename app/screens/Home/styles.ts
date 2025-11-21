@@ -13,6 +13,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingBottom: 100,
     paddingHorizontal: 12,
   },
@@ -131,72 +132,68 @@ export const styles = StyleSheet.create({
 
   // SOS Button
   sosButtonContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
     alignSelf: 'center',
-    marginTop: 20,
-
+    marginTop: 150,
+    marginBottom: 30,
+    paddingVertical: 20,
   },
-  ripple: {
-    position: 'absolute',
-    backgroundColor: '#FF6B6B',
-    borderRadius: 100,
-    borderWidth: 2,
-    borderColor: '#FF6B6B',
-  },
-  sosButton: {
-    overflow: 'hidden',
-    shadowColor: '#FF3B30',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 10,
-    zIndex: 10,
-  },
-  sosButtonGradient: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  sosButtonContainerExpanded: {
+    marginTop: 60, // Reduced margin when active case is expanded
   },
   // Neumorphism SOS Button (Dual Shadows)
   sosButtonNeumorphic: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     // Light shadow (top-left) - raised effect
-    shadowColor: '#D1B0B0',
-    shadowOffset: { width: -10, height: -10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: -8, height: -8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: '#FFE5E5',
   },
   sosButtonInner: {
     backgroundColor: '#FF6B6B',
     alignItems: 'center',
     justifyContent: 'center',
     // Dark shadow (bottom-right) - depth
-    shadowColor: '#CC5555',
-    shadowOffset: { width: 8, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#CC0000',
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   sosButtonContent: {
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
   },
   sosButtonText: {
-    fontWeight: 'bold',
-    color: '#fff',
-    letterSpacing: 4,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 6,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+  },
+  sosButtonSubtext: {
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginTop: 2,
+    opacity: 0.95,
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 
   // Activity
@@ -1201,40 +1198,60 @@ export const styles = StyleSheet.create({
 
   // No Active Case
   noActiveCaseContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
   },
   noActiveCaseText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#999',
+    color: '#34C759',
     letterSpacing: 0.3,
+    marginTop: 12,
+  },
+  noActiveCaseSubtext: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#999',
+    marginTop: 8,
+    textAlign: 'center',
   },
 
   // Active Case Section
   activeCaseContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    // --- POSITIONING CHANGE ---
+    position: 'absolute', 
+    bottom: 90, // Adjust this value to clear your Bottom Navbar perfectly
+    left: 12,
+    right: 12,
+    zIndex: 100, // Floats on top of everything else
+    // --------------------------
+
+    backgroundColor: 'rgba(255, 255, 255, 0.98)', // High opacity to hide content behind it
     borderRadius: 24,
     padding: 20,
-    marginHorizontal: 12,
-    marginTop: 20,
-    marginBottom: 20,
+    
+    // Shadows (Slightly stronger upwards shadow for bottom sheets)
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: -4 }, // Negative height moves shadow up
     shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 20,
+    
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: 'rgba(255, 107, 107, 0.2)', // Subtle red border
   },
   activeCaseHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  minimizeButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
   },
   activeCaseTitleRow: {
     flexDirection: 'row',
@@ -1268,19 +1285,38 @@ export const styles = StyleSheet.create({
   caseDetailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
     gap: 8,
   },
   caseDetailLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#666',
+    minWidth: 80,
   },
   caseDetailValue: {
     fontSize: 14,
     fontWeight: '700',
     color: '#1a1a1a',
     flex: 1,
+  },
+  caseDescriptionContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  caseDescriptionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  caseDescriptionText: {
+    fontSize: 13,
+    color: '#1a1a1a',
+    lineHeight: 20,
   },
   messageContainer: {
     marginBottom: 16,
@@ -1332,6 +1368,7 @@ export const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 2,
     borderColor: '#FF3B30',
+    marginTop: 8,
   },
   cancelReportButtonText: {
     fontSize: 16,
@@ -1376,6 +1413,272 @@ export const styles = StyleSheet.create({
   navTextActive: {
     color: '#FF6B6B',
     fontWeight: '600',
+  },
+
+  // Read-only styles
+  readOnlyInput: {
+    backgroundColor: '#F0F0F0',
+    color: '#999',
+    opacity: 0.7,
+  },
+  readOnlyButton: {
+    opacity: 0.5,
+  },
+
+  // Floating Chat Head
+  floatingChatHead: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF6B6B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  chatHeadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  chatHeadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  // Chat Modal
+  chatModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  chatModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  chatModalHeader: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  chatModalHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  chatModalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  chatModalTitleContainer: {
+    marginLeft: 12,
+  },
+  chatModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    letterSpacing: 0.3,
+  },
+  chatModalSubtitle: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  chatModalCloseButton: {
+    padding: 4,
+  },
+  chatModalContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  chatModalOfficeInfo: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+  },
+  chatModalOfficeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatModalOfficeIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFE5E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  chatModalOfficeTextContainer: {
+    flex: 1,
+  },
+  chatModalOfficeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
+  chatModalStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatModalStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  chatModalStatus: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  chatMessagesContainer: {
+    flex: 1,
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  chatMessageWrapper: {
+    marginBottom: 8,
+    flexDirection: 'row',
+  },
+  chatMessageWrapperUser: {
+    justifyContent: 'flex-end',
+  },
+  chatMessage: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    maxWidth: '75%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  chatMessageUser: {
+    backgroundColor: '#FF6B6B',
+    borderBottomRightRadius: 4,
+  },
+  chatMessagePolice: {
+    backgroundColor: '#F0F0F0',
+    borderBottomLeftRadius: 4,
+  },
+  chatMessageText: {
+    fontSize: 15,
+    color: '#1a1a1a',
+    lineHeight: 20,
+  },
+  chatMessageTextUser: {
+    color: '#FFFFFF',
+  },
+  chatMessageTime: {
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  chatMessageTimeUser: {
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  chatMessageTimePolice: {
+    color: '#999',
+  },
+  chatEmptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  chatEmptyText: {
+    fontSize: 16,
+    color: '#999',
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  chatEmptySubtext: {
+    fontSize: 14,
+    color: '#CCC',
+    marginTop: 4,
+  },
+  chatInputContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  chatInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 24,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+  },
+  chatInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1a1a1a',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    maxHeight: 100,
+    textAlignVertical: 'top',
+  },
+  chatSendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FF6B6B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  chatSendButtonDisabled: {
+    backgroundColor: '#E0E0E0',
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });
 
