@@ -14,6 +14,7 @@ export interface ActiveCase {
   created_at: string;
   updated_at: string;
   office_name?: string;
+  office_id?: string | null;
 }
 
 export const useActiveCase = () => {
@@ -24,6 +25,7 @@ export const useActiveCase = () => {
   const checkActiveCase = async () => {
     try {
       setLoading(true);
+      
       const { data: { session } } = await supabase.auth.getSession();
       const authUserId = session?.user?.id || null;
       const userEmail = session?.user?.email || null;
@@ -81,44 +83,23 @@ export const useActiveCase = () => {
         .eq('reporter_id', reporterId)
         .order('created_at', { ascending: false });
 
-      console.log('📊 Total reports found:', reports?.length || 0);
-      console.log('📊 All reports:', reports?.map(r => ({ id: r.report_id, status: r.status })));
-
       // Filter for active cases (exclude cancelled, resolved, and closed cases)
       const activeReports = reports?.filter(report => {
         const status = report.status?.toLowerCase();
         // Only show pending and responding cases (exclude cancelled, resolved, and closed)
-        const isActive = status === 'pending' || status === 'responding';
-        console.log(`📊 Report ${report.report_id}: status="${status}", isActive=${isActive}`);
-        return isActive;
+        return status === 'pending' || status === 'responding';
       }) || [];
-
-      console.log('📊 Active reports after filter:', activeReports.length);
 
       if (error) {
         console.error('Error checking active case:', error);
         setActiveCase(null);
       } else if (activeReports && activeReports.length > 0) {
-        console.log('✅ Found active case:', activeReports[0].report_id);
         const report = activeReports[0];
         
-        // Fetch police office name if assigned_office_id exists
-        let officeName = null;
-        if (report.assigned_office_id) {
-          const { data: officeData } = await supabase
-            .from('tbl_police_offices')
-            .select('office_name')
-            .eq('office_id', report.assigned_office_id)
-            .single();
-          
-          if (officeData) {
-            officeName = officeData.office_name;
-          }
-        }
-        
+        // Use assigned_office_id as office_id
         setActiveCase({
           ...report,
-          office_name: officeName,
+          office_id: report.assigned_office_id,
         } as ActiveCase);
       } else {
         setActiveCase(null);
@@ -192,27 +173,11 @@ export const useActiveCase = () => {
         console.error('Error fetching notifications:', error);
         setNotifications([]);
       } else {
-        // Fetch office names for each notification
-        const notificationsWithOffice = await Promise.all(
-          (reports || []).map(async (report) => {
-            let officeName = null;
-            if (report.assigned_office_id) {
-              const { data: officeData } = await supabase
-                .from('tbl_police_offices')
-                .select('office_name')
-                .eq('office_id', report.assigned_office_id)
-                .single();
-              
-              if (officeData) {
-                officeName = officeData.office_name;
-              }
-            }
-            return {
-              ...report,
-              office_name: officeName,
-            } as ActiveCase;
-          })
-        );
+        // Use assigned_office_id as office_id for each notification
+        const notificationsWithOffice = (reports || []).map((report) => ({
+          ...report,
+          office_id: report.assigned_office_id,
+        } as ActiveCase));
         setNotifications(notificationsWithOffice);
       }
     } catch (error) {
@@ -236,10 +201,6 @@ export const useActiveCase = () => {
           table: 'tbl_reports',
         },
         (payload) => {
-          console.log('🔄 Real-time update received:', payload.eventType, payload.new?.report_id);
-          const newStatus = payload.new?.status?.toLowerCase();
-          const oldStatus = payload.old?.status?.toLowerCase();
-          
           // Always refresh both active case and notifications when status changes
           // This ensures resolved/closed cases disappear from active case and appear in notifications
           setTimeout(() => {

@@ -391,16 +391,9 @@ const Home: React.FC = () => {
     if (currentActiveCase && currentActiveCase.report_id) {
       console.log('✅ Showing Active Case Popup');
       
-      // Fetch office name if needed
-      let officeName = (currentActiveCase as any).office_name;
-      if (!officeName && currentActiveCase.assigned_office_id) {
-        const { data: officeData } = await supabase
-          .from('tbl_police_offices')
-          .select('office_name')
-          .eq('office_id', currentActiveCase.assigned_office_id)
-          .single();
-        if (officeData) officeName = officeData.office_name;
-      }
+      // Use assigned_office_id as office_id
+      const officeId = currentActiveCase.assigned_office_id;
+      const officeName = (currentActiveCase as any).office_name;
       
       const statusEmoji = currentActiveCase.status === 'pending' ? '🟠' : 
                          currentActiveCase.status === 'responding' ? '🟢' : '🔵';
