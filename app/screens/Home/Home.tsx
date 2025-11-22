@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { ChatModal } from '../../components/ChatModal';
 import { FloatingChatHead } from '../../components/FloatingChatHead';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,14 +15,17 @@ const buttonSize = Math.min(screenWidth * 0.6, 220);
 
 const Home: React.FC = () => {
   const { user, loadUser } = useAuth();
-  const { activeCase, cancelReport, checkActiveCase } = useActiveCase();
+  const { activeCase, cancelReport, checkActiveCase, notifications, checkNotifications } = useActiveCase();
   const [isLoading, setIsLoading] = useState(true);
   const [sendingSOS, setSendingSOS] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [chatModalVisible, setChatModalVisible] = useState(false);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<ActiveCase | null>(null);
   const [isCaseMinimized, setIsCaseMinimized] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [sosCountdown, setSosCountdown] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sosCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -114,17 +117,21 @@ const Home: React.FC = () => {
   }, [scaleAnim]);
 
   const handleCancelReport = useCallback(async () => {
-    if (!activeCase || cancelling || countdown > 0) return;
+    if (!activeCase || cancelling || countdown > 0) {
+      console.log('❌ Cannot cancel:', { activeCase: !!activeCase, cancelling, countdown });
+      return;
+    }
 
+    // Allow cancellation of any active case (including SOS-created reports)
     Alert.alert(
       'Cancel Report',
-      'Are you sure you want to cancel this active case?',
+      'Are you sure you want to cancel this active case? This action cannot be undone.',
       [
         { text: 'No', style: 'cancel' },
         {
           text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             // Start 5-second countdown
             setCountdown(5);
             setCancelling(true);
@@ -144,11 +151,13 @@ const Home: React.FC = () => {
                     countdownIntervalRef.current = null;
                   }
                   
-                  // Cancel the report
-                  cancelReport(activeCase.report_id).then((success) => {
+                  // Cancel the report (pass activeCase to preserve remarks)
+                  cancelReport(activeCase.report_id, activeCase).then(async (success) => {
                     setCancelling(false);
                     setCountdown(0);
                     if (success) {
+                      // Refresh active case after cancellation
+                      await checkActiveCase();
                       Alert.alert('Success', 'Report has been cancelled successfully.');
                     } else {
                       Alert.alert('Error', 'Failed to cancel report. Please try again.');
@@ -163,7 +172,7 @@ const Home: React.FC = () => {
         },
       ]
     );
-  }, [activeCase, cancelling, cancelReport, countdown]);
+  }, [activeCase, cancelling, cancelReport, countdown, checkActiveCase]);
 
   // Cleanup countdown on unmount
   useEffect(() => {
@@ -309,8 +318,8 @@ const Home: React.FC = () => {
         setTimeout(async () => {
           console.log('🔄 Refreshing active case after SOS submission...');
           await checkActiveCase();
-          console.log('✅ Active case refresh completed');
-        }, 500);
+          console.log('✅ Active case refresh completed - SOS report is now active and can be cancelled');
+        }, 1000);
       }
     } catch (error: any) {
       console.error('Error sending SOS:', error);
@@ -367,7 +376,8 @@ const Home: React.FC = () => {
 
       const activeReports = reports?.filter(report => {
         const status = report.status?.toLowerCase();
-        return status === 'pending' || (status !== 'resolved' && status !== 'cancelled');
+        // Only show pending and responding cases (exclude resolved, closed, and cancelled)
+        return status === 'pending' || status === 'responding';
       }) || [];
 
       if (activeReports.length > 0) {
@@ -517,11 +527,52 @@ const Home: React.FC = () => {
   return (
     <View style={styles.gradientContainer}>
         <View style={styles.container}>
+          {/* Notification Icon at Top */}
+          <View style={styles.notificationHeader}>
+            <TouchableOpacity
+              style={styles.notificationIconButton}
+              onPress={async () => {
+                await checkNotifications();
+                setNotificationModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="notifications" size={28} color="#FF6B6B" />
+              {notifications.length > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
           <ScrollView
             ref={scrollViewRef}
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={async () => {
+                  setRefreshing(true);
+                  try {
+                    await Promise.all([
+                      checkActiveCase(),
+                      checkNotifications()
+                    ]);
+                  } catch (error) {
+                    console.error('Error refreshing:', error);
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+                colors={['#FF6B6B']}
+                tintColor="#FF6B6B"
+              />
+            }
           >
           {/* SOS Button */}
           <View style={[
@@ -593,7 +644,10 @@ const Home: React.FC = () => {
 
           {/* Active Case Info or No Active Case Label */}
           {activeCase ? (
-            <View style={styles.activeCaseContainer}>
+            <View style={[
+              styles.activeCaseContainer,
+              !isCaseMinimized && styles.activeCaseContainerExpanded
+            ]}>
               <View style={styles.activeCaseHeader}>
                 <View style={styles.activeCaseTitleRow}>
                   <Ionicons name="alert-circle" size={24} color="#FF6B6B" />
@@ -620,53 +674,57 @@ const Home: React.FC = () => {
               </View>
               
               {!isCaseMinimized && (
-                <View style={styles.caseDetailsContainer}>
-                <View style={styles.caseDetailRow}>
-                  <Ionicons name="folder" size={16} color="#666" />
-                  <Text style={styles.caseDetailLabel}>Category:</Text>
-                  <Text style={styles.caseDetailValue}>{activeCase.category}</Text>
-                </View>
-                
-                <View style={styles.caseDetailRow}>
-                  <Ionicons name="time" size={16} color="#666" />
-                  <Text style={styles.caseDetailLabel}>Created:</Text>
-                  <Text style={styles.caseDetailValue}>
-                    {new Date(activeCase.created_at).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </Text>
-                </View>
-                
-                {activeCase.office_name && (
+                <ScrollView 
+                  style={styles.caseDetailsContainer}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
                   <View style={styles.caseDetailRow}>
-                    <Ionicons name="business" size={16} color="#666" />
-                    <Text style={styles.caseDetailLabel}>Assigned Office:</Text>
-                    <Text style={styles.caseDetailValue}>{activeCase.office_name}</Text>
+                    <Ionicons name="folder" size={16} color="#666" />
+                    <Text style={styles.caseDetailLabel}>Category:</Text>
+                    <Text style={styles.caseDetailValue}>{activeCase.category}</Text>
                   </View>
-                )}
-                
-                {activeCase.description && (
-                  <View style={styles.caseDescriptionContainer}>
-                    <Text style={styles.caseDescriptionLabel}>Description:</Text>
-                    <Text style={styles.caseDescriptionText} numberOfLines={3}>
-                      {activeCase.description}
-                    </Text>
-                  </View>
-                )}
-                
-                {activeCase.latitude && activeCase.longitude && (
+                  
                   <View style={styles.caseDetailRow}>
-                    <Ionicons name="location" size={16} color="#666" />
-                    <Text style={styles.caseDetailLabel}>Location:</Text>
+                    <Ionicons name="time" size={16} color="#666" />
+                    <Text style={styles.caseDetailLabel}>Created:</Text>
                     <Text style={styles.caseDetailValue}>
-                      {Number(activeCase.latitude).toFixed(4)}, {Number(activeCase.longitude).toFixed(4)}
+                      {new Date(activeCase.created_at).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </Text>
                   </View>
-                )}
-              </View>
+                  
+                  {activeCase.office_name && (
+                    <View style={styles.caseDetailRow}>
+                      <Ionicons name="business" size={16} color="#666" />
+                      <Text style={styles.caseDetailLabel}>Assigned Office:</Text>
+                      <Text style={styles.caseDetailValue}>{activeCase.office_name}</Text>
+                    </View>
+                  )}
+                  
+                  {activeCase.description && (
+                    <View style={styles.caseDescriptionContainer}>
+                      <Text style={styles.caseDescriptionLabel}>Description:</Text>
+                      <Text style={styles.caseDescriptionText} numberOfLines={3}>
+                        {activeCase.description}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {activeCase.latitude && activeCase.longitude && (
+                    <View style={styles.caseDetailRow}>
+                      <Ionicons name="location" size={16} color="#666" />
+                      <Text style={styles.caseDetailLabel}>Location:</Text>
+                      <Text style={styles.caseDetailValue}>
+                        {Number(activeCase.latitude).toFixed(4)}, {Number(activeCase.longitude).toFixed(4)}
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
               )}
               
               <TouchableOpacity
@@ -706,6 +764,160 @@ const Home: React.FC = () => {
           onClose={() => setChatModalVisible(false)}
           activeCase={activeCase}
         />
+
+        {/* Notification Detail Panel */}
+        <Modal
+          visible={selectedNotification !== null}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSelectedNotification(null)}
+        >
+          {selectedNotification && (
+            <View style={styles.notificationDetailOverlay}>
+              <View style={styles.notificationDetailContainer}>
+                <View style={styles.notificationDetailHeader}>
+                  <Text style={styles.notificationDetailTitle}>Notification</Text>
+                  <TouchableOpacity
+                    onPress={() => setSelectedNotification(null)}
+                    style={styles.notificationDetailCloseButton}
+                  >
+                    <Ionicons name="close" size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.notificationDetailContent}>
+                  <View style={styles.notificationMessageContainer}>
+                    <Ionicons 
+                      name={
+                        selectedNotification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
+                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'ban-circle' :
+                        selectedNotification.status?.toLowerCase() === 'closed' ? 'close-circle' :
+                        selectedNotification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
+                        selectedNotification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
+                        'time-circle'
+                      } 
+                      size={64} 
+                      color={
+                        selectedNotification.status?.toLowerCase() === 'resolved' ? '#34C759' :
+                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? '#FF3B30' :
+                        selectedNotification.status?.toLowerCase() === 'closed' ? '#999' :
+                        selectedNotification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
+                        selectedNotification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
+                        '#FF9500'
+                      } 
+                    />
+                    <Text style={styles.notificationMessageText}>
+                      {selectedNotification.status?.toLowerCase() === 'resolved' ? 'Your case is already resolved' :
+                       (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'Your case has been cancelled' :
+                       selectedNotification.status?.toLowerCase() === 'closed' ? 'Your case is already closed' :
+                       selectedNotification.status?.toLowerCase() === 'investigating' ? 'Your case is under investigation' :
+                       selectedNotification.status?.toLowerCase() === 'assigned' ? 'Your case has been assigned' :
+                       'Your case is pending'}
+                    </Text>
+                    <Text style={styles.notificationMessageSubtext}>
+                      {selectedNotification.category}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+        </Modal>
+
+        {/* Notification Modal */}
+        <Modal
+          visible={notificationModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setNotificationModalVisible(false)}
+        >
+          <View style={styles.notificationModalOverlay}>
+            <View style={styles.notificationModalContainer}>
+              <View style={styles.notificationModalHeader}>
+                <Text style={styles.notificationModalTitle}>Notifications</Text>
+                <TouchableOpacity
+                  onPress={() => setNotificationModalVisible(false)}
+                  style={styles.notificationModalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView style={styles.notificationModalContent}>
+                {notifications.length === 0 ? (
+                  <View style={styles.noNotificationsContainer}>
+                    <Ionicons name="notifications-off" size={48} color="#CCC" />
+                    <Text style={styles.noNotificationsText}>No notifications</Text>
+                    <Text style={styles.noNotificationsSubtext}>Case status updates will appear here</Text>
+                  </View>
+                ) : (
+                  notifications.map((notification) => (
+                    <TouchableOpacity
+                      key={notification.report_id}
+                      style={styles.notificationItem}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setSelectedNotification(notification);
+                        setNotificationModalVisible(false);
+                      }}
+                    >
+                      <View style={[
+                        styles.notificationStatusIndicator,
+                        {
+                          backgroundColor: 
+                            notification.status?.toLowerCase() === 'resolved' ? '#34C759' :
+                            notification.status?.toLowerCase() === 'closed' ? '#999' :
+                            notification.status?.toLowerCase() === 'cancelled' ? '#FF3B30' :
+                            notification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
+                            notification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
+                            '#FF9500' // pending - orange
+                        }
+                      ]} />
+                      <View style={styles.notificationItemContent}>
+                        <Text style={styles.notificationItemTitle}>
+                          {notification.status?.toLowerCase() === 'resolved' ? 'Case Resolved' :
+                           notification.status?.toLowerCase() === 'closed' ? 'Case Closed' :
+                           notification.status?.toLowerCase() === 'cancelled' ? 'Case Cancelled' :
+                           notification.status?.toLowerCase() === 'investigating' ? 'Case Under Investigation' :
+                           notification.status?.toLowerCase() === 'assigned' ? 'Case Assigned' :
+                           'Case Pending'}
+                        </Text>
+                        <Text style={styles.notificationItemCategory}>{notification.category}</Text>
+                        <Text style={styles.notificationItemTime}>
+                          {new Date(notification.updated_at).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Text>
+                      </View>
+                      <Ionicons 
+                        name={
+                          notification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
+                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? 'ban-circle' :
+                          notification.status?.toLowerCase() === 'closed' ? 'close-circle' :
+                          notification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
+                          notification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
+                          'time-circle'
+                        } 
+                        size={24} 
+                        color={
+                          notification.status?.toLowerCase() === 'resolved' ? '#34C759' :
+                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? '#FF3B30' :
+                          notification.status?.toLowerCase() === 'closed' ? '#999' :
+                          notification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
+                          notification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
+                          '#FF9500'
+                        } 
+                      />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </View>
     </View>
   );

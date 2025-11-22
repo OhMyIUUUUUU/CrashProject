@@ -40,6 +40,45 @@ export default function CustomTabBar() {
     });
   }, []);
 
+  // Auto-update positions when route changes to ensure current route is in center
+  useEffect(() => {
+    const currentScreen = currentRoute as ScreenType;
+    
+    // Only update if current route is not already in center
+    setPositions(prev => {
+      if (prev.center === currentScreen) {
+        // Already in center, no change needed
+        return prev;
+      }
+      
+      // Find where the current screen is and swap it with center
+      let newPositions = { ...prev };
+      
+      if (prev.left === currentScreen) {
+        newPositions = {
+          ...prev,
+          center: currentScreen,
+          left: prev.center,
+        };
+        updatePositions(newPositions);
+        return newPositions;
+      }
+      
+      if (prev.right === currentScreen) {
+        newPositions = {
+          ...prev,
+          center: currentScreen,
+          right: prev.center,
+        };
+        updatePositions(newPositions);
+        return newPositions;
+      }
+      
+      // Current screen not found in positions, return unchanged
+      return prev;
+    });
+  }, [currentRoute]);
+
   // Update persistent state whenever positions change
   const updatePositions = (newPositions: typeof positions) => {
     persistentPositions = { ...newPositions };

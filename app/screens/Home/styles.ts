@@ -1,4 +1,6 @@
-import { Platform, StyleSheet } from 'react-native';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
+
+const { height: screenHeight } = Dimensions.get('window');
 
 export const styles = StyleSheet.create({
   gradientContainer: {
@@ -9,6 +11,49 @@ export const styles = StyleSheet.create({
     flex: 1,
     paddingTop: Platform.OS === 'ios' ? 50 : 40,
   },
+  // Notification Header
+  notificationHeader: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    right: 12,
+    zIndex: 1000,
+    paddingTop: 8,
+  },
+  notificationIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#FFE5E5',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   scrollView: {
     flex: 1,
   },
@@ -16,6 +61,24 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 100,
     paddingHorizontal: 12,
+  },
+  newReportBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(52, 199, 89, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 199, 89, 0.3)',
+    gap: 8,
+  },
+  newReportBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#34C759',
   },
 
   // Welcome Card - Neumorphism (Dual Shadows)
@@ -789,7 +852,7 @@ export const styles = StyleSheet.create({
   descriptionInput: {
     minHeight: 150,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#000000',
     textAlignVertical: 'top',
     paddingTop: 10,
     paddingBottom: 10,
@@ -1241,6 +1304,15 @@ export const styles = StyleSheet.create({
     
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 107, 0.2)', // Subtle red border
+    
+    // Responsive adjustments
+    maxHeight: screenHeight * 0.6, // Maximum 60% of screen height
+  },
+  activeCaseContainerExpanded: {
+    // When maximized, adjust bottom position and allow more height
+    bottom: 90,
+    maxHeight: screenHeight * 0.75, // Allow up to 75% of screen height when expanded
+    minHeight: 200, // Minimum height to ensure content is visible
   },
   activeCaseHeader: {
     flexDirection: 'row',
@@ -1281,6 +1353,7 @@ export const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    maxHeight: screenHeight * 0.4, // Limit height to prevent overflow
   },
   caseDetailRow: {
     flexDirection: 'row',
@@ -1679,6 +1752,160 @@ export const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
     shadowOpacity: 0,
     elevation: 0,
+  },
+
+  // Notification Modal
+  notificationModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  notificationModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '85%',
+    minHeight: '50%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  notificationModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  notificationModalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1a1a1a',
+    letterSpacing: 0.3,
+  },
+  notificationModalCloseButton: {
+    padding: 4,
+  },
+  notificationModalContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    minHeight: 200,
+  },
+  noNotificationsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  noNotificationsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+  },
+  noNotificationsSubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+  },
+  notificationStatusIndicator: {
+    width: 4,
+    height: 50,
+    borderRadius: 2,
+    marginRight: 12,
+  },
+  notificationItemContent: {
+    flex: 1,
+  },
+  notificationItemTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 4,
+  },
+  notificationItemCategory: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  notificationItemTime: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '500',
+  },
+
+  // Notification Detail Panel
+  notificationDetailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notificationDetailContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    width: '85%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  notificationDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  notificationDetailTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1a1a1a',
+    letterSpacing: 0.3,
+  },
+  notificationDetailCloseButton: {
+    padding: 4,
+  },
+  notificationDetailContent: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationMessageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationMessageText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  notificationMessageSubtext: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
