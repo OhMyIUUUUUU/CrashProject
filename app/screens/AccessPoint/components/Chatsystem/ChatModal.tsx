@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { supabase } from '../lib/supabase';
-import { ActiveCase } from '../hooks/useActiveCase';
-import { styles } from '../screens/Home/styles';
+import { ActiveCase } from '../../../../hooks/useActiveCase';
+import { supabase } from '../../../../lib/supabase';
+import { styles } from '../../../Home/styles';
 
 interface Message {
   message_id: string;

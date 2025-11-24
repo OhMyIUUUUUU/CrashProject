@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from 'react-native'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
 import { StorageService } from '../utils/storage'
+import { initializeNotifications } from './screens/AccessPoint/components/Notifications/notificationService'
 
 export default function Index() {
   const router = useRouter()
@@ -11,6 +12,13 @@ export default function Index() {
 
   useEffect(() => {
     const initializeAuth = async () => {
+      // Request notification permission on app startup
+      try {
+        await initializeNotifications()
+      } catch (error) {
+        console.error('Error initializing notifications:', error)
+      }
+
       await loadUser()
 
       const [hasLocalSession, { data: { session } }] = await Promise.all([

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { TouchableOpacity, View, Text } from 'react-native';
-import { styles } from '../screens/Home/styles';
+import { Text, TouchableOpacity, View } from 'react-native';
+import { styles } from '../../../Home/styles';
 
 interface FloatingChatHeadProps {
   onPress: () => void;

@@ -197,7 +197,13 @@ export async function displayNotification(
   return await notifee.displayNotification({
     title,
     body,
-    data,
+    data: {
+      ...data,
+      type: data?.type || 'default',
+      timestamp: Date.now(),
+      // Add navigation data to open app when tapped
+      navigation: true,
+    },
     android: {
       channelId,
       importance: AndroidImportance.HIGH,
@@ -209,11 +215,26 @@ export async function displayNotification(
       visibility: 1, // Public visibility (shows on lock screen)
       pressAction: {
         id: 'default',
+        launchActivity: 'default', // Opens the app when tapped
       },
       // Style for better visibility (BigText for longer messages)
       style: {
         type: 1, // BigText style
         text: body, // The text to display
+      },
+      // Wake up device and show notification
+      wakeUp: true,
+      // Show notification even when app is in background
+      ongoing: false,
+    },
+    ios: {
+      // iOS specific settings
+      sound: 'default',
+      badge: true,
+      foregroundPresentationOptions: {
+        alert: true,
+        badge: true,
+        sound: true,
       },
     },
   });

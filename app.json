@@ -21,7 +21,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ff6b6b",
+          "mode": "production"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

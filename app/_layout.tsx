@@ -1,14 +1,16 @@
 import { EventType } from '@notifee/react-native';
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { AuthProvider } from './contexts/AuthContext';
 import {
   addNotificationReceivedListener,
   addNotificationResponseListener,
   getInitialNotification,
-  initializeNotifications
+  initializeNotifications,
+  registerBackgroundEventHandler
 } from './screens/AccessPoint/components/Notifications/notificationService';
+import { onBackgroundNotificationEvent } from '../notifications/backgroundHandler';
 
 function RootLayoutContent() {
   const router = useRouter();
@@ -19,22 +21,30 @@ function RootLayoutContent() {
   const handleNotificationTap = (event: any) => {
     console.log('Notification tapped:', event);
     
-    // Show alert that notification was tapped
-    Alert.alert(
-      'Notification tapped!',
-      'You opened the app via notification.',
-      [{ text: 'OK', style: 'default' }]
-    );
+    // Get notification data
+    const notification = event.detail?.notification || event.notification;
+    const notificationData = notification?.data;
     
-    // Handle navigation based on notification data
-    const notificationData = event.detail?.notification?.data;
-    
-    if (notificationData && notificationData.type === 'navigation') {
+    // Ensure app is in foreground
+    if (AppState.currentState !== 'active') {
+      // App will be brought to foreground automatically
+      // Wait a bit for app to be ready
+      setTimeout(() => {
+        handleNavigation(notificationData, notification);
+      }, 500);
+    } else {
+      handleNavigation(notificationData, notification);
+    }
+  };
+
+  const handleNavigation = (notificationData: any, notification: any) => {
+    // Navigate based on notification type
+    if (notificationData?.type === 'navigation' || notificationData?.navigation) {
       // Navigate to notification screen with the notification data
       const params = {
         notificationData: JSON.stringify({
-          title: notificationData.title || event.detail?.notification?.title,
-          body: notificationData.body || event.detail?.notification?.body,
+          title: notification?.title || notificationData?.title,
+          body: notification?.body || notificationData?.body,
           data: notificationData,
           date: new Date().toLocaleString(),
         }),
@@ -44,6 +54,9 @@ function RootLayoutContent() {
         pathname: '/screens/Notifications/Notifications',
         params,
       });
+    } else {
+      // Default: Navigate to Home or show notification details
+      router.push('/screens/Home/Home');
     }
   };
 
@@ -130,6 +143,10 @@ function RootLayoutContent() {
       });
     }
 
+    // Register background notification handler
+    // This must be called before any other notification code
+    registerBackgroundEventHandler(onBackgroundNotificationEvent);
+
     // Initialize notification service and request permissions on app start
     initializeNotifications().then((success) => {
       if (success) {
@@ -138,6 +155,7 @@ function RootLayoutContent() {
         // Check if app was opened from a notification
         getInitialNotification().then((initialNotification) => {
           if (initialNotification) {
+            console.log('App opened from notification:', initialNotification);
             handleNotificationTap(initialNotification);
           }
         }).catch((error) => {
