@@ -1,5 +1,4 @@
-import notifee, { Event, EventType } from '@notifee/react-native';
-import { Platform, AppState } from 'react-native';
+import { Event, EventType } from '@notifee/react-native';
 
 /**
  * Background notification event handler

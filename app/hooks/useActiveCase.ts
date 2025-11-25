@@ -65,6 +65,7 @@ export const useActiveCase = () => {
       // Check for active cases from tbl_reports
       // Only show pending and responding cases (resolved/closed cases go to notifications)
       // Fetch all reports first, then filter for active statuses
+      console.log('🔍 Checking active case for reporter_id:', reporterId);
       const { data: reports, error } = await supabase
         .from('tbl_reports')
         .select(`
@@ -83,18 +84,28 @@ export const useActiveCase = () => {
         .eq('reporter_id', reporterId)
         .order('created_at', { ascending: false });
 
+      console.log('📊 Total reports found:', reports?.length || 0);
+      if (reports && reports.length > 0) {
+        console.log('📋 All report statuses:', reports.map(r => ({ id: r.report_id, status: r.status })));
+      }
+
       // Filter for active cases (exclude cancelled, resolved, and closed cases)
       const activeReports = reports?.filter(report => {
-        const status = report.status?.toLowerCase();
+        const status = report.status?.toLowerCase().trim();
+        const isActive = status === 'pending' || status === 'responding';
+        console.log(`🔎 Report ${report.report_id}: status="${report.status}" (normalized="${status}") -> ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
         // Only show pending and responding cases (exclude cancelled, resolved, and closed)
-        return status === 'pending' || status === 'responding';
+        return isActive;
       }) || [];
 
+      console.log('✅ Active reports found:', activeReports.length);
+
       if (error) {
-        console.error('Error checking active case:', error);
+        console.error('❌ Error checking active case:', error);
         setActiveCase(null);
       } else if (activeReports && activeReports.length > 0) {
         const report = activeReports[0];
+        console.log('✅ Setting active case:', report.report_id, 'Status:', report.status);
         
         // Use assigned_office_id as office_id
         setActiveCase({
@@ -102,6 +113,7 @@ export const useActiveCase = () => {
           office_id: report.assigned_office_id,
         } as ActiveCase);
       } else {
+        console.log('❌ No active reports found - setting activeCase to null');
         setActiveCase(null);
       }
     } catch (error) {
@@ -258,37 +270,33 @@ export const useActiveCase = () => {
         console.log('✅ Finished deleting files from storage');
       }
 
-      // Update the report status to 'closed' instead of deleting (since 'cancelled' is not in the enum)
-      // We'll mark it as cancelled in remarks so notifications can identify it
-      const now = new Date().toISOString();
+      // Delete associated messages first (if any)
+      console.log('🗑️ Deleting messages for report:', reportId);
+      const { error: messagesError } = await supabase
+        .from('tbl_messages')
+        .delete()
+        .eq('report_id', reportId);
+      
+      if (messagesError) {
+        console.warn('⚠️ Error deleting messages (may not exist):', messagesError);
+      } else {
+        console.log('✅ Messages deleted');
+      }
+      
+      // Delete the report from database
+      console.log('🗑️ Deleting report from database:', reportId);
       const { error } = await supabase
         .from('tbl_reports')
-        .update({
-          status: 'closed',
-          updated_at: now,
-          remarks: currentCase?.remarks ? `${currentCase.remarks} [Cancelled by user]` : 'Report cancelled by user',
-        })
+        .delete()
         .eq('report_id', reportId);
 
       if (error) {
-        console.error('Error cancelling report:', error);
+        console.error('❌ Error deleting report:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
         return false;
       }
       
-      console.log('✅ Report status updated to cancelled');
-      
-      // Note: We keep messages and media records for audit purposes
-      // If you want to delete them, uncomment the following:
-      // await supabase
-      //   .from('tbl_messages')
-      //   .delete()
-      //   .eq('report_id', reportId);
-      
-      // Also delete associated media records (optional - comment out if you want to keep them)
-      await supabase
-        .from('tbl_media')
-        .delete()
-        .eq('report_id', reportId);
+      console.log('✅ Report deleted from database');
       
       await checkActiveCase();
       return true;

@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import NetInfo from '@react-native-community/netinfo';
+import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -8,6 +10,7 @@ import { ChatModal } from '../AccessPoint/components/Chatsystem/ChatModal';
 import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
+import { reverseGeocode } from '../../../utils/geocoding';
 import { ChatBox } from '../AccessPoint/components/ChatBox';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
@@ -46,6 +49,18 @@ const Report: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
+
+  // Monitor network connectivity - redirect to offline mode if connection is lost
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const isConnected = state.isConnected ?? false;
+      if (!isConnected) {
+        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   // Load active case data into form when active case exists
   useEffect(() => {
@@ -446,7 +461,7 @@ const Report: React.FC = () => {
       if (authUserId) {
         const { data, error } = await supabase
           .from('tbl_users')
-          .select('user_id, first_name, last_name')
+          .select('user_id, first_name, last_name, barangay, city')
           .eq('user_id', authUserId)
           .single();
         
@@ -460,7 +475,7 @@ const Report: React.FC = () => {
       if (!userInfo && userEmail) {
         const { data, error } = await supabase
           .from('tbl_users')
-          .select('user_id, first_name, last_name')
+          .select('user_id, first_name, last_name, barangay, city')
           .eq('email', userEmail)
           .single();
         
@@ -479,15 +494,46 @@ const Report: React.FC = () => {
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
       const now = new Date().toISOString();
 
-      // 3. Create report payload
+      // 3. Fetch GPS Location and reverse geocode
+      let latitude: number | null = null;
+      let longitude: number | null = null;
+      let locationCity: string | null = null; // Only from GPS, no profile fallback
+      let locationBarangay: string | null = null; // Only from GPS, no profile fallback
+      
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const currentLocation = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          latitude = currentLocation.coords.latitude;
+          longitude = currentLocation.coords.longitude;
+          
+           // Reverse geocode to get city and barangay from GPS coordinates ONLY
+           if (latitude && longitude) {
+             const geocodeResult = await reverseGeocode(latitude, longitude);
+             locationCity = geocodeResult.city || null; // Only from GPS, no profile fallback
+             locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
+           }
+        } else {
+          console.warn('Location permission not granted. Report will be submitted without GPS coordinates and location.');
+        }
+      } catch (error) {
+        console.error('Error fetching location:', error);
+        // Continue without location - don't block report submission
+      }
+
+      // 4. Create report payload
       const reportPayload = {
         reporter_id: reporterId,
         assigned_office_id: null,
         category: selectedCategory,
         description: description.trim(),
         status: 'pending',
-        latitude: null,
-        longitude: null,
+        latitude: latitude,
+        longitude: longitude,
+        location_city: locationCity, // From GPS geocoding, fallback to user profile
+        location_barangay: locationBarangay, // From GPS geocoding, fallback to user profile
         remarks: `Report submitted via mobile app. Role: ${role.charAt(0).toUpperCase() + role.slice(1)}. User: ${userName}`,
         created_at: now,
         updated_at: now,

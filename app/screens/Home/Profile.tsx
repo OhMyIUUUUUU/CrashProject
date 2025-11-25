@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { StorageService } from '../../../utils/storage';
 import { ChatBox } from '../AccessPoint/components/ChatBox';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
@@ -33,44 +35,128 @@ const Profile: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [savingChanges, setSavingChanges] = useState(false);
 
+  // Monitor network connectivity - redirect to offline mode if connection is lost
   useEffect(() => {
-    fetchUserProfile();
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const isConnected = state.isConnected ?? false;
+      if (!isConnected) {
+        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  useEffect(() => {
+    // Ensure user is loaded from AuthContext first
+    const loadProfile = async () => {
+      // Load user from local storage if not already loaded
+      if (!user) {
+        await loadUser();
+      }
+      await fetchUserProfile();
+    };
+    loadProfile();
   }, []);
 
   const fetchUserProfile = async () => {
     try {
       setLoading(true);
       
-      // Get current user session
+      // Get current user session from Supabase
       const { data: { session } } = await supabase.auth.getSession();
+      let authUserId = session?.user?.id || null;
+      let userEmail = session?.user?.email || null;
       
-      if (!session?.user) {
-        Alert.alert('Error', 'No user session found');
+      // Fallback to local storage if Supabase session is not available
+      if (!authUserId && !userEmail) {
+        console.log('⚠️ No Supabase session, checking local storage...');
+        
+        // Try to get user from AuthContext
+        let localUser = user;
+        
+        // If not in context, try to load it directly from storage
+        if (!localUser) {
+          const storedUser = await StorageService.getUserSession();
+          if (storedUser) {
+            localUser = storedUser;
+            console.log('✅ Loaded user from storage directly');
+          }
+        }
+        
+        if (localUser?.email) {
+          userEmail = localUser.email;
+          console.log('✅ Found email from local storage:', userEmail);
+        }
+      }
+      
+      if (!authUserId && !userEmail) {
+        console.error('No user session found - no user_id or email');
+        Alert.alert('Error', 'No user session found. Please log in again.');
         setLoading(false);
         return;
       }
 
-      // Fetch user data from database
-      const { data: userData, error } = await supabase
+      console.log('🔍 Fetching profile - user_id:', authUserId, 'email:', userEmail);
+
+      // Try to fetch by user_id first (more reliable)
+      let userData = null;
+      let error = null;
+
+      if (authUserId) {
+        const { data, error: userError } = await supabase
+          .from('tbl_users')
+          .select('*')
+          .eq('user_id', authUserId)
+          .single();
+        
+        if (data && !userError) {
+          userData = data;
+          console.log('✅ Found user by user_id');
+        } else {
+          console.log('⚠️ Not found by user_id, trying email...', userError?.message);
+          error = userError;
+        }
+      }
+
+      // If not found by user_id, try by email
+      if (!userData && userEmail) {
+        const { data, error: emailError } = await supabase
         .from('tbl_users')
         .select('*')
-        .eq('email', session.user.email)
+          .eq('email', userEmail)
         .single();
 
-      if (error) {
+        if (data && !emailError) {
+          userData = data;
+          console.log('✅ Found user by email');
+        } else {
+          console.error('❌ Not found by email either:', emailError?.message);
+          error = emailError;
+        }
+      }
+
+      if (error && !userData) {
         console.error('Error fetching user profile:', error);
-        Alert.alert('Error', 'Failed to load profile data');
+        Alert.alert(
+          'Error', 
+          `Failed to load profile data: ${error.message || 'User not found in database'}`
+        );
         setLoading(false);
         return;
       }
 
       if (userData) {
+        console.log('✅ Profile data loaded successfully');
         setProfileData(userData as UserProfileData);
         setEditedProfileData(userData as UserProfileData);
+      } else {
+        console.error('❌ No user data found');
+        Alert.alert('Error', 'User profile not found. Please contact support.');
       }
     } catch (error: any) {
       console.error('Error fetching profile:', error);
-      Alert.alert('Error', 'Failed to load profile data');
+      Alert.alert('Error', `Failed to load profile data: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -206,6 +292,26 @@ const Profile: React.FC = () => {
         return;
       }
 
+      // Sync updated data to local storage
+      if (user) {
+        const updatedUserData = {
+          ...user,
+          email: editedProfileData.email,
+          phone: editedProfileData.phone || '',
+          firstName: editedProfileData.first_name || '',
+          lastName: editedProfileData.last_name || '',
+          gender: editedProfileData.sex || '',
+          birthdate: editedProfileData.birthdate || '',
+          emergencyContactName: editedProfileData.emergency_contact_name || '',
+          emergencyContactNumber: editedProfileData.emergency_contact_number || '',
+          region: editedProfileData.region || '',
+          city: editedProfileData.city || '',
+          barangay: editedProfileData.barangay || '',
+        };
+        await StorageService.saveUserSession(updatedUserData);
+        console.log('✅ Profile synced to local storage');
+      }
+
       setProfileData(prev => prev ? { ...prev, ...updatePayload } : prev);
       await loadUser();
       setIsEditing(false);
@@ -268,6 +374,40 @@ const Profile: React.FC = () => {
           <ActivityIndicator size="large" color="#fff" />
           <Text style={{ color: '#fff', fontSize: 16, marginTop: 16 }}>Loading profile...</Text>
         </View>
+      </LinearGradient>
+    );
+  }
+
+  // Show error state if profile data is null after loading
+  if (!profileData) {
+    return (
+      <LinearGradient
+        colors={['#FF6B6B', '#FF8787', '#FFA8A8']}
+        style={styles.gradientContainer}
+      >
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Ionicons name="alert-circle-outline" size={64} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '600', marginTop: 16, textAlign: 'center' }}>
+            Profile Not Found
+          </Text>
+          <Text style={{ color: '#fff', fontSize: 14, marginTop: 8, textAlign: 'center', opacity: 0.9 }}>
+            Unable to load your profile data. Please try again.
+          </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#fff',
+              paddingHorizontal: 24,
+              paddingVertical: 12,
+              borderRadius: 8,
+              marginTop: 24,
+            }}
+            onPress={fetchUserProfile}
+            activeOpacity={0.8}
+          >
+            <Text style={{ color: '#FF6B6B', fontSize: 16, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+        <CustomTabBar />
       </LinearGradient>
     );
   }

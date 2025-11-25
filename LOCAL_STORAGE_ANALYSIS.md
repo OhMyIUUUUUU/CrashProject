@@ -230,3 +230,5 @@ const loadUser = async () => {
 
 **Solution**: Rebuild the app with `npx expo run:android` to properly link AsyncStorage native module.
 
+
+

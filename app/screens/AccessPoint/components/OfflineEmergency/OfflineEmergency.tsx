@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../../contexts/AuthContext';
+import { StorageService } from '../../../../../utils/storage';
+import { reverseGeocode } from '../../../../../utils/geocoding';
 
 const { width: screenWidth } = Dimensions.get('window');
 const buttonSize = Math.min(screenWidth * 0.5, 200);
@@ -71,14 +74,51 @@ const OfflineEmergency: React.FC = () => {
 
   const handleSMS = useCallback(async (number: string, message: string) => {
     try {
-      const canSMS = await Linking.canOpenURL(`sms:${number}`);
-      if (canSMS) {
-        await Linking.openURL(`sms:${number}?body=${encodeURIComponent(message)}`);
-      } else {
-        Alert.alert('Error', 'Unable to send SMS on this device');
+      // Try to open SMS directly - don't check canOpenURL first as it can be unreliable
+      // Try multiple formats for better compatibility
+      const smsFormats = [
+        `sms:${number}?body=${encodeURIComponent(message)}`, // Standard format with body
+        `sms://${number}?body=${encodeURIComponent(message)}`, // Alternative format
+        `sms:${number}`, // Without body (fallback)
+      ];
+
+      let opened = false;
+      for (const smsUrl of smsFormats) {
+        try {
+          // Try to open directly without checking canOpenURL first
+          await Linking.openURL(smsUrl);
+          opened = true;
+          break;
+        } catch (urlError) {
+          // Try next format
+          continue;
+        }
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send SMS');
+
+      if (!opened) {
+        // If all formats failed, show message for manual sending
+        Alert.alert(
+          'SMS',
+          `Please send this message to ${number}:\n\n${message}`,
+          [
+            {
+              text: 'Copy Message',
+              onPress: () => {
+                // You could use Clipboard here if available
+                Alert.alert('Message', 'Please manually copy the message above');
+              },
+            },
+            { text: 'OK' }
+          ]
+        );
+      }
+    } catch (error: any) {
+      // If opening fails, show the message so user can manually send it
+      Alert.alert(
+        'SMS',
+        `Please send this message to ${number}:\n\n${message}`,
+        [{ text: 'OK' }]
+      );
     }
   }, []);
 
@@ -99,15 +139,137 @@ const OfflineEmergency: React.FC = () => {
   }, [scaleAnim]);
 
   const handleSOSPress = useCallback(async () => {
-    try {
-      console.log('Opening phone dialer with 911...');
-      await Linking.openURL('tel:911');
-      console.log('Phone dialer opened successfully');
-    } catch (error) {
-      console.error('Error opening phone dialer:', error);
-      Alert.alert('Error', 'Failed to open phone dialer');
-    }
-  }, []);
+    // Show action sheet to choose between call or message
+    Alert.alert(
+      'Emergency SOS',
+      'Choose how to contact 911:',
+      [
+        {
+          text: 'Call 911',
+          onPress: async () => {
+            try {
+              await Linking.openURL('tel:911');
+            } catch (error) {
+              console.error('Error opening phone dialer:', error);
+              Alert.alert('Error', 'Failed to open phone dialer');
+            }
+          },
+          style: 'default',
+        },
+        {
+          text: 'Message 911',
+          onPress: async () => {
+            try {
+              // Fetch user profile from AsyncStorage (works offline)
+              let userProfile = user;
+              
+              // If user is not in context, try to load from AsyncStorage
+              if (!userProfile) {
+                try {
+                  const localUser = await StorageService.getUserSession();
+                  if (localUser) {
+                    userProfile = localUser;
+                  }
+                } catch (storageError) {
+                  console.warn('Could not load user from storage:', storageError);
+                }
+              }
+              
+              // Get user profile information
+              const userName = userProfile 
+                ? `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim() || 'User'
+                : 'User';
+              const userPhone = userProfile?.phone || 'N/A';
+              const userEmail = userProfile?.email || 'N/A';
+              const emergencyContact = userProfile?.emergency_contact_name 
+                ? `${userProfile.emergency_contact_name} (${userProfile.emergency_contact_number || 'N/A'})`
+                : 'N/A';
+
+              // Get GPS location
+              let latitude: number | null = null;
+              let longitude: number | null = null;
+              let locationCity: string | null = null;
+              let locationBarangay: string | null = null;
+
+              try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status === 'granted') {
+                  const currentLocation = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                  });
+                  latitude = currentLocation.coords.latitude;
+                  longitude = currentLocation.coords.longitude;
+
+                  // Try to reverse geocode to get city and barangay
+                  // In offline mode, this will likely fail, so we catch and continue
+                  if (latitude && longitude) {
+                    try {
+                      const geocodeResult = await reverseGeocode(latitude, longitude);
+                      locationCity = geocodeResult.city || null;
+                      locationBarangay = geocodeResult.barangay || null;
+                    } catch (geocodeError: any) {
+                      // In offline mode, geocoding will fail - that's expected
+                      // We'll use GPS coordinates only
+                      const errorMsg = geocodeError?.message || String(geocodeError) || '';
+                      if (!errorMsg.toLowerCase().includes('network')) {
+                        // Only log non-network errors (network errors are expected in offline mode)
+                        console.warn('Geocoding failed (expected in offline mode):', errorMsg);
+                      }
+                    }
+                  }
+                }
+              } catch (locationError) {
+                // Location permission denied or GPS unavailable - continue without location
+                console.warn('Location unavailable:', locationError);
+              }
+
+              // Build location string
+              const locationParts = [];
+              if (locationBarangay) locationParts.push(locationBarangay);
+              if (locationCity) locationParts.push(locationCity);
+              const locationString = locationParts.length > 0 
+                ? locationParts.join(', ')
+                : 'Location unavailable';
+
+              // Build GPS coordinates string
+              const gpsString = latitude && longitude
+                ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+                : 'GPS coordinates unavailable';
+
+              // Create predefined emergency message
+              const emergencyMessage = `EMERGENCY SOS ALERT
+
+Reporter: ${userName}
+Phone: ${userPhone}
+Email: ${userEmail}
+Emergency Contact: ${emergencyContact}
+
+Location: ${locationString}
+GPS Coordinates: ${gpsString}
+Latitude: ${latitude?.toFixed(6) || 'N/A'}
+Longitude: ${longitude?.toFixed(6) || 'N/A'}
+
+Time: ${new Date().toLocaleString()}
+
+I need immediate assistance. Please help.`;
+
+              // Send SMS with predefined text
+              handleSMS('911', emergencyMessage);
+            } catch (error) {
+              console.error('Error preparing emergency message:', error);
+              Alert.alert('Error', 'Failed to prepare emergency message');
+            }
+          },
+          style: 'default',
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [handleSMS, user]);
 
 
   return (
@@ -126,17 +288,7 @@ const OfflineEmergency: React.FC = () => {
 
         <View style={styles.noticeCard}>
           <Text style={styles.noticeTitle}>No Internet Connection Detected</Text>
-          <Text style={styles.noticeDescription}>You can still contact emergency hotlines.</Text>
-          <View style={styles.noticeActions}>
-            <TouchableOpacity
-              style={[styles.noticeButton, styles.noticeSmsButton]}
-              onPress={() => handleSMS('911', 'Emergency! I need help. Please assist.')}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chatbubble" size={18} color="#fff" />
-              <Text style={styles.noticeButtonText}>Send SMS to 911</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.noticeDescription}>You can still contact emergency hotlines using the SOS button below.</Text>
         </View>
 
         <View style={styles.sosContainer}>

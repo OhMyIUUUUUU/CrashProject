@@ -74,17 +74,25 @@ export async function initializeNotifications(): Promise<boolean> {
 
     // Create a default channel for Android
     if (Platform.OS === 'android') {
-      await notifee.createChannel({
-        id: 'default',
-        name: 'Default',
-        importance: AndroidImportance.HIGH,
-        vibration: true,
-        vibrationPattern: [300, 500],
-        lights: true,
-        lightColor: '#FF231F7C',
-        sound: 'default',
-        showBadge: true,
-      });
+      try {
+        await notifee.createChannel({
+          id: 'default',
+          name: 'Default',
+          importance: AndroidImportance.HIGH,
+          vibration: true,
+          vibrationPattern: [300, 500],
+          lights: true,
+          lightColor: '#FF231F7C',
+          sound: 'default',
+          showBadge: true,
+        });
+      } catch (channelError: any) {
+        // Suppress keep-awake errors
+        const errorMsg = channelError?.message || String(channelError) || '';
+        if (!errorMsg.toLowerCase().includes('keep awake')) {
+          console.error('Error creating notification channel:', channelError);
+        }
+      }
     }
 
     // If permission was just granted (wasn't granted before), show welcome notification
@@ -100,15 +108,23 @@ export async function initializeNotifications(): Promise<boolean> {
               timestamp: Date.now(),
             }
           );
-        } catch (error) {
-          console.error('Error showing welcome notification:', error);
+        } catch (error: any) {
+          // Suppress keep-awake errors
+          const errorMsg = error?.message || String(error) || '';
+          if (!errorMsg.toLowerCase().includes('keep awake')) {
+            console.error('Error showing welcome notification:', error);
+          }
         }
       }, 500); // Small delay to ensure channel is ready
     }
 
     return true;
-  } catch (error) {
-    console.error('Error initializing notifications:', error);
+  } catch (error: any) {
+    // Suppress keep-awake errors
+    const errorMsg = error?.message || String(error) || '';
+    if (!errorMsg.toLowerCase().includes('keep awake')) {
+      console.error('Error initializing notifications:', error);
+    }
     return false;
   }
 }
@@ -174,27 +190,38 @@ export async function displayNotification(
   body: string,
   data?: Record<string, any>
 ): Promise<string> {
-  // Ensure we have permission first
-  const hasPermission = await requestNotificationPermission();
-  if (!hasPermission) {
-    throw new Error('Notification permission not granted');
-  }
+  try {
+    // Ensure we have permission first
+    const hasPermission = await requestNotificationPermission();
+    if (!hasPermission) {
+      throw new Error('Notification permission not granted');
+    }
 
-  // Create or get the channel
-  const channelId = await notifee.createChannel({
-    id: 'default',
-    name: 'Default',
-    importance: AndroidImportance.HIGH,
-    vibration: true,
-    vibrationPattern: [300, 500],
-    lights: true,
-    lightColor: '#FF231F7C',
-    sound: 'default',
-    showBadge: true,
-  });
+    // Create or get the channel
+    let channelId: string;
+    try {
+      channelId = await notifee.createChannel({
+        id: 'default',
+        name: 'Default',
+        importance: AndroidImportance.HIGH,
+        vibration: true,
+        vibrationPattern: [300, 500],
+        lights: true,
+        lightColor: '#FF231F7C',
+        sound: 'default',
+        showBadge: true,
+      });
+    } catch (channelError: any) {
+      // Suppress keep-awake errors, but still try to use default channel
+      const errorMsg = channelError?.message || String(channelError) || '';
+      if (!errorMsg.toLowerCase().includes('keep awake')) {
+        console.error('Error creating channel:', channelError);
+      }
+      channelId = 'default'; // Fallback to default channel ID
+    }
 
-  // Display notification with settings to ensure it shows in tray
-  return await notifee.displayNotification({
+    // Display notification with settings to ensure it shows in tray
+    return await notifee.displayNotification({
     title,
     body,
     data: {
@@ -238,5 +265,17 @@ export async function displayNotification(
       },
     },
   });
+  } catch (error: any) {
+    // Suppress keep-awake errors
+    const errorMsg = error?.message || String(error) || '';
+    if (errorMsg.toLowerCase().includes('keep awake')) {
+      // Silently handle keep-awake errors - they're harmless
+      console.warn('Keep-awake error suppressed (harmless)');
+      // Return a dummy ID so the app doesn't break
+      return 'notification-' + Date.now();
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 

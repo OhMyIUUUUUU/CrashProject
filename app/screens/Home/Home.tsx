@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { ChatModal } from '../AccessPoint/components/Chatsystem/ChatModal';
@@ -7,6 +9,7 @@ import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingC
 import { useAuth } from '../../contexts/AuthContext';
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
+import { reverseGeocode } from '../../../utils/geocoding';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
@@ -14,6 +17,7 @@ const { width: screenWidth } = Dimensions.get('window');
 const buttonSize = Math.min(screenWidth * 0.6, 220);
 
 const Home: React.FC = () => {
+  const router = useRouter();
   const { user, loadUser } = useAuth();
   const { activeCase, cancelReport, checkActiveCase, notifications, checkNotifications } = useActiveCase();
   const [isLoading, setIsLoading] = useState(true);
@@ -38,6 +42,18 @@ const Home: React.FC = () => {
       console.log('❌ No Active Case');
     }
   }, [activeCase]);
+
+  // Monitor network connectivity - redirect to offline mode if connection is lost
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const isConnected = state.isConnected ?? false;
+      if (!isConnected) {
+        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   // Request location permission when component mounts
   useEffect(() => {
@@ -264,19 +280,45 @@ const Home: React.FC = () => {
       const latitude = currentLocation.coords.latitude;
       const longitude = currentLocation.coords.longitude;
 
+      // Reverse geocode to get city and barangay from GPS coordinates ONLY
+      const geocodeResult = await reverseGeocode(latitude, longitude);
+      const locationCity = geocodeResult.city || null; // Only from GPS, no profile fallback
+      const locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
+
       // Create description with user info
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
+      const locationAddress = geocodeResult.fullAddress || 
+        (locationBarangay && locationCity ? `${locationBarangay}, ${locationCity}` : null) ||
+        `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      
       const description = `EMERGENCY SOS ALERT\n\n` +
         `Reporter: ${userName}\n` +
         `Phone: ${userInfo.phone || 'N/A'}\n` +
         `Email: ${userInfo.email || 'N/A'}\n` +
         `Emergency Contact: ${userInfo.emergency_contact_name || 'N/A'} (${userInfo.emergency_contact_number || 'N/A'})\n` +
-        `Address: ${userInfo.barangay || ''}, ${userInfo.city || ''}, ${userInfo.region || ''}\n` +
+        `Location: ${locationAddress}\n` +
         `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
         `Role: Witness\n` +
         `Time: ${new Date().toLocaleString()}`;
 
       const now = new Date().toISOString();
+
+      // Validate reporter_id before proceeding
+      if (!reporterId) {
+        console.error('❌ No reporter_id available - cannot create report');
+        Alert.alert('Error', 'Unable to identify user. Please log in again.');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
+
+      console.log('✅ Reporter ID validated:', reporterId);
+      console.log('✅ User info:', {
+        name: userName,
+        email: userInfo.email,
+        city: userInfo.city,
+        barangay: userInfo.barangay
+      });
 
       // 4. Create report payload with default category "Emergency" and role "witness"
       const reportPayload = {
@@ -287,12 +329,18 @@ const Home: React.FC = () => {
         status: 'pending',
         latitude: latitude,
         longitude: longitude,
+        location_city: locationCity, // From GPS geocoding, fallback to user profile
+        location_barangay: locationBarangay, // From GPS geocoding, fallback to user profile
         remarks: `SOS triggered via mobile app. Role: Witness. User: ${userName}`,
         created_at: now,
         updated_at: now,
       };
 
       // 5. Send SOS report to database
+      console.log('📤 Attempting to insert SOS report to database...');
+      console.log('📋 Report payload:', JSON.stringify(reportPayload, null, 2));
+      console.log('📋 Reporter ID type:', typeof reporterId, 'Value:', reporterId);
+      
       const { data, error } = await supabase
         .from('tbl_reports')
         .insert([reportPayload])
@@ -300,26 +348,132 @@ const Home: React.FC = () => {
         .single();
 
       if (error) {
-        console.error('SOS submission error:', error);
+        console.error('❌ SOS submission error:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error hint:', error.hint);
+        
         Alert.alert(
           'Error',
-          'Failed to send SOS. Please try again.',
+          `Failed to send SOS: ${error.message || 'Unknown error'}\n\nError Code: ${error.code || 'N/A'}\n\nPlease check the console for details.`,
           [{ text: 'OK' }]
         );
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
       } else {
-        console.log('SOS submitted successfully:', data);
+        console.log('✅ SOS submitted successfully:', data);
+        console.log('📋 Report ID:', data.report_id);
+        console.log('📋 Status:', data.status);
+        console.log('📋 Reporter ID:', data.reporter_id);
+        console.log('📋 Category:', data.category);
+        
+        // Verify the report was created with correct status
+        if (data.status && (data.status.toLowerCase() === 'pending' || data.status.toLowerCase() === 'responding')) {
+          console.log('✅ Report has active status - should appear in active case');
+        } else {
+          console.warn('⚠️ Report status is not active:', data.status);
+        }
+        
+        // Directly verify the report exists in database and set active case immediately
+        try {
+          console.log('🔍 Verifying report exists in database with ID:', data.report_id);
+          const { data: verifyData, error: verifyError } = await supabase
+            .from('tbl_reports')
+            .select('*')
+            .eq('report_id', data.report_id)
+            .single();
+          
+          if (verifyError) {
+            console.error('❌ Verification failed - report not found in database:', verifyError);
+            console.error('❌ This means the insert may have failed even though no error was returned');
+          } else if (verifyData) {
+            console.log('✅ Verified report exists in database');
+            console.log('📋 Verified report data:', JSON.stringify(verifyData, null, 2));
+            if (verifyData.status?.toLowerCase() === 'pending' || verifyData.status?.toLowerCase() === 'responding') {
+              console.log('✅ Report is active - forcing active case update');
+            }
+          } else {
+            console.warn('⚠️ Verification returned no data - report may not exist');
+          }
+        } catch (verifyErr) {
+          console.error('❌ Error verifying report:', verifyErr);
+        }
+        
+        // Also try to query all reports by this reporter to see if it appears
+        try {
+          console.log('🔍 Querying all reports for reporter_id:', reporterId);
+          const { data: allReports, error: queryError } = await supabase
+            .from('tbl_reports')
+            .select('report_id, status, category, created_at')
+            .eq('reporter_id', reporterId)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          
+          if (queryError) {
+            console.error('❌ Error querying reports:', queryError);
+          } else {
+            console.log('📊 Recent reports for this user:', allReports?.length || 0);
+            if (allReports && allReports.length > 0) {
+              console.log('📋 Reports:', JSON.stringify(allReports, null, 2));
+              const foundReport = allReports.find(r => r.report_id === data.report_id);
+              if (foundReport) {
+                console.log('✅ SOS report found in query results!');
+              } else {
+                console.warn('⚠️ SOS report NOT found in query results - may not be saved');
+              }
+            }
+          }
+        } catch (queryErr) {
+          console.error('❌ Error in query check:', queryErr);
+        }
+        
+        // Immediately refresh active case after successful SOS submission
+        console.log('🔄 Immediately refreshing active case after SOS submission...');
+        await checkActiveCase();
+        
+        // Refresh multiple times to ensure it's caught (database replication delay)
+        const refreshAttempts = [300, 600, 1000, 1500, 2000];
+        refreshAttempts.forEach((delay) => {
+          setTimeout(async () => {
+            console.log(`🔄 Refresh attempt after ${delay}ms...`);
+            await checkActiveCase();
+          }, delay);
+        });
+        
+        // Show success alert with report ID for verification
+        const reportIdForDisplay = data.report_id.substring(0, 8) + '...';
         Alert.alert(
           'SOS Sent Successfully',
-          'Your emergency SOS has been sent. Responders have been notified.',
-          [{ text: 'OK' }]
+          `Your emergency SOS has been sent. Responders have been notified.\n\nReport ID: ${reportIdForDisplay}\n\nCheck your Supabase dashboard to verify it's saved.`,
+          [{ 
+            text: 'OK',
+            onPress: () => {
+              // Final refresh when user dismisses alert
+              console.log('🔄 Final refresh after alert dismissal...');
+              setTimeout(() => checkActiveCase(), 200);
+            }
+          }]
         );
-        // Refresh active case after sending SOS
-        // Wait a moment for database to process, then refresh
-        setTimeout(async () => {
-          console.log('🔄 Refreshing active case after SOS submission...');
-          await checkActiveCase();
-          console.log('✅ Active case refresh completed - SOS report is now active and can be cancelled');
-        }, 1000);
+        
+        // Log complete report data for debugging
+        console.log('='.repeat(50));
+        console.log('📋 COMPLETE REPORT DATA FOR DATABASE VERIFICATION:');
+        console.log('='.repeat(50));
+        console.log('Report ID:', data.report_id);
+        console.log('Reporter ID:', data.reporter_id);
+        console.log('Category:', data.category);
+        console.log('Status:', data.status);
+        console.log('Created At:', data.created_at);
+        console.log('Location:', data.location_city, data.location_barangay);
+        console.log('GPS:', data.latitude, data.longitude);
+        console.log('='.repeat(50));
+        console.log('💡 To verify in Supabase:');
+        console.log('1. Go to Table Editor → tbl_reports');
+        console.log('2. Search for report_id:', data.report_id);
+        console.log('3. Or filter by reporter_id:', data.reporter_id);
+        console.log('='.repeat(50));
       }
     } catch (error: any) {
       console.error('Error sending SOS:', error);
