@@ -4,7 +4,6 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { ChatModal } from '../AccessPoint/components/Chatsystem/ChatModal';
 import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import { useAuth } from '../../contexts/AuthContext';
 import { useActiveCase } from '../../hooks/useActiveCase';
@@ -23,7 +22,6 @@ const Home: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [sendingSOS, setSendingSOS] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [chatModalVisible, setChatModalVisible] = useState(false);
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<ActiveCase | null>(null);
   const [isCaseMinimized, setIsCaseMinimized] = useState(false);
@@ -442,17 +440,22 @@ const Home: React.FC = () => {
           }, delay);
         });
         
-        // Show success alert with report ID for verification
+        // Show success alert and navigate to Chat Screen
         const reportIdForDisplay = data.report_id.substring(0, 8) + '...';
         Alert.alert(
           'SOS Sent Successfully',
-          `Your emergency SOS has been sent. Responders have been notified.\n\nReport ID: ${reportIdForDisplay}\n\nCheck your Supabase dashboard to verify it's saved.`,
+          `Your emergency SOS has been sent. Responders have been notified.\n\nReport ID: ${reportIdForDisplay}`,
           [{ 
             text: 'OK',
             onPress: () => {
               // Final refresh when user dismisses alert
               console.log('🔄 Final refresh after alert dismissal...');
               setTimeout(() => checkActiveCase(), 200);
+              // Navigate to Chat Screen with the new report_id
+              router.push({
+                pathname: '/screens/Home/ChatScreen',
+                params: { report_id: data.report_id },
+              });
             }
           }]
         );
@@ -900,17 +903,16 @@ const Home: React.FC = () => {
         {/* Floating Chat Head - Only show when active case exists */}
         {activeCase && (
           <FloatingChatHead
-            onPress={() => setChatModalVisible(true)}
+            onPress={() => {
+              router.push({
+                pathname: '/screens/Home/ChatScreen',
+                params: { report_id: activeCase.report_id },
+              });
+            }}
             unreadCount={0} // TODO: Calculate unread count from messages
           />
         )}
 
-        {/* Chat Modal */}
-        <ChatModal
-          visible={chatModalVisible}
-          onClose={() => setChatModalVisible(false)}
-          activeCase={activeCase}
-        />
 
         {/* Notification Detail Panel */}
         <Modal

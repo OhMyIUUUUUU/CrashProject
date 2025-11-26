@@ -1648,10 +1648,14 @@ export const styles = StyleSheet.create({
   },
   chatMessageWrapper: {
     marginBottom: 8,
+    marginVertical: 4,
     flexDirection: 'row',
   },
   chatMessageWrapperUser: {
     justifyContent: 'flex-end',
+  },
+  chatMessageWrapperLeft: {
+    justifyContent: 'flex-start',
   },
   chatMessage: {
     paddingHorizontal: 14,
@@ -1665,16 +1669,16 @@ export const styles = StyleSheet.create({
     elevation: 2,
   },
   chatMessageUser: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#34C759', // Green for CIVILIAN
     borderBottomRightRadius: 4,
   },
   chatMessagePolice: {
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#007AFF', // Blue for POLICE
     borderBottomLeftRadius: 4,
   },
   chatMessageText: {
     fontSize: 15,
-    color: '#1a1a1a',
+    color: '#FFFFFF',
     lineHeight: 20,
   },
   chatMessageTextUser: {
@@ -1687,9 +1691,11 @@ export const styles = StyleSheet.create({
   },
   chatMessageTimeUser: {
     color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'right',
   },
   chatMessageTimePolice: {
-    color: '#999',
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'left',
   },
   chatEmptyState: {
     alignItems: 'center',

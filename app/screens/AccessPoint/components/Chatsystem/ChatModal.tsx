@@ -1,6 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { ActiveCase } from '../../../../hooks/useActiveCase';
 import { supabase } from '../../../../lib/supabase';
 import { styles } from '../../../Home/styles';
@@ -9,7 +20,7 @@ interface Message {
   message_id: string;
   report_id: string;
   sender_id: string;
-  sender_type: string;
+  sender_type: 'user' | 'police_office' | 'admin';
   receiver_id: string;
   message_content: string;
   timestamp: string;
@@ -26,7 +37,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ visible, onClose, activeCa
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList>(null);
   const channelRef = useRef<any>(null);
 
   useEffect(() => {
@@ -55,7 +66,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ visible, onClose, activeCa
   useEffect(() => {
     if (messages.length > 0 && visible) {
       setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }
   }, [messages, visible]);
@@ -155,17 +166,45 @@ export const ChatModal: React.FC<ChatModalProps> = ({ visible, onClose, activeCa
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return '#FF9500';
-      case 'responding':
-        return '#34C759';
-      case 'resolved':
-        return '#007AFF';
-      default:
-        return '#999';
-    }
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isUser = item.sender_type === 'user';
+    const messageTime = new Date(item.timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return (
+      <View
+        style={[
+          styles.chatMessageWrapper,
+          isUser ? styles.chatMessageWrapperUser : styles.chatMessageWrapperLeft,
+        ]}
+      >
+        <View
+          style={[
+            styles.chatMessage,
+            isUser ? styles.chatMessageUser : styles.chatMessagePolice,
+          ]}
+        >
+          <Text
+            style={[
+              styles.chatMessageText,
+              isUser && styles.chatMessageTextUser,
+            ]}
+          >
+            {item.message_content}
+          </Text>
+          <Text
+            style={[
+              styles.chatMessageTime,
+              isUser ? styles.chatMessageTimeUser : styles.chatMessageTimePolice,
+            ]}
+          >
+            {messageTime}
+          </Text>
+        </View>
+      </View>
+    );
   };
 
   if (!activeCase) return null;
@@ -177,151 +216,99 @@ export const ChatModal: React.FC<ChatModalProps> = ({ visible, onClose, activeCa
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.chatModalOverlay}>
-        <View style={styles.chatModalContainer}>
-          {/* Header */}
-          <View style={styles.chatModalHeader}>
-            <View style={styles.chatModalHeaderContent}>
-              <View style={styles.chatModalHeaderLeft}>
-                <Ionicons name="chatbubbles" size={24} color="#FF6B6B" />
-                <View style={styles.chatModalTitleContainer}>
-                  <Text style={styles.chatModalTitle}>Case Conversation</Text>
-                  <Text style={styles.chatModalSubtitle}>Report #{activeCase.report_id.substring(0, 8)}</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.chatModalCloseButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close-circle" size={28} color="#999" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <ScrollView 
-            ref={scrollViewRef}
-            style={styles.chatModalContent}
-            contentContainerStyle={{ flexGrow: 1 }}
-          >
-            {/* Office Info */}
-            <View style={styles.chatModalOfficeInfo}>
-              <View style={styles.chatModalOfficeHeader}>
-                <View style={styles.chatModalOfficeIconContainer}>
-                  <Ionicons name="business" size={20} color="#FF6B6B" />
-                </View>
-                <View style={styles.chatModalOfficeTextContainer}>
-                  <Text style={styles.chatModalOfficeName}>
-                    {activeCase.office_name || 'No office assigned'}
-                  </Text>
-                  <View style={styles.chatModalStatusContainer}>
-                    <View
-                      style={[
-                        styles.chatModalStatusDot,
-                        { backgroundColor: getStatusColor(activeCase.status) }
-                      ]}
-                    />
-                    <Text style={styles.chatModalStatus}>
-                      {activeCase.status.charAt(0).toUpperCase() + activeCase.status.slice(1)}
-                    </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <View style={styles.chatModalOverlay}>
+          <View style={styles.chatModalContainer}>
+            {/* Header */}
+            <View style={styles.chatModalHeader}>
+              <View style={styles.chatModalHeaderContent}>
+                <View style={styles.chatModalHeaderLeft}>
+                  <Ionicons name="chatbubbles" size={24} color="#FF6B6B" />
+                  <View style={styles.chatModalTitleContainer}>
+                    <Text style={styles.chatModalTitle}>Case Conversation</Text>
+                    <Text style={styles.chatModalSubtitle}>Report #{activeCase.report_id.substring(0, 8)}</Text>
                   </View>
                 </View>
+                <TouchableOpacity
+                  style={styles.chatModalCloseButton}
+                  onPress={onClose}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close-circle" size={28} color="#999" />
+                </TouchableOpacity>
               </View>
             </View>
 
-            {/* Messages */}
-            <View style={styles.chatMessagesContainer}>
-              {loading ? (
-                <View style={styles.chatEmptyState}>
-                  <Ionicons name="chatbubbles-outline" size={48} color="#CCC" />
-                  <Text style={styles.chatEmptyText}>Loading messages...</Text>
-                </View>
-              ) : messages.length === 0 ? (
-                <View style={styles.chatEmptyState}>
-                  <Ionicons name="chatbubbles-outline" size={48} color="#CCC" />
-                  <Text style={styles.chatEmptyText}>No messages yet</Text>
-                  <Text style={styles.chatEmptySubtext}>Start the conversation!</Text>
-                </View>
-              ) : (
-                messages.map((message) => {
-                  const isUser = message.sender_type === 'user';
-                  return (
-                    <View
-                      key={message.message_id}
-                      style={[
-                        styles.chatMessageWrapper,
-                        isUser && styles.chatMessageWrapperUser,
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.chatMessage,
-                          isUser ? styles.chatMessageUser : styles.chatMessagePolice,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.chatMessageText,
-                            isUser && styles.chatMessageTextUser,
-                          ]}
-                        >
-                          {message.message_content}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.chatMessageTime,
-                            isUser ? styles.chatMessageTimeUser : styles.chatMessageTimePolice,
-                          ]}
-                        >
-                          {new Date(message.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </ScrollView>
-
-          {/* Input */}
-          <View style={styles.chatInputContainer}>
-            <View style={styles.chatInputWrapper}>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Type a message..."
-                placeholderTextColor="#999"
-                value={newMessage}
-                onChangeText={setNewMessage}
-                multiline
-                maxLength={500}
-                editable={!sending}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.chatSendButton,
-                  (!newMessage.trim() || sending) && styles.chatSendButtonDisabled
+            {/* Messages List */}
+            {loading ? (
+              <View style={styles.chatEmptyState}>
+                <ActivityIndicator size="large" color="#FF6B6B" />
+                <Text style={styles.chatEmptyText}>Loading messages...</Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                renderItem={renderMessage}
+                keyExtractor={(item) => item.message_id}
+                contentContainerStyle={[
+                  styles.chatMessagesContainer,
+                  messages.length === 0 && { flex: 1, justifyContent: 'center' },
                 ]}
-                onPress={sendMessage}
-                disabled={!newMessage.trim() || sending}
-                activeOpacity={0.7}
-              >
-                {sending ? (
-                  <Ionicons name="hourglass" size={20} color="#FFFFFF" />
-                ) : (
-                  <Ionicons
-                    name="send"
-                    size={20}
-                    color={newMessage.trim() ? '#FFFFFF' : '#999'}
-                  />
-                )}
-              </TouchableOpacity>
+                ListEmptyComponent={
+                  <View style={styles.chatEmptyState}>
+                    <Ionicons name="chatbubbles-outline" size={48} color="#CCC" />
+                    <Text style={styles.chatEmptyText}>No messages yet</Text>
+                    <Text style={styles.chatEmptySubtext}>Start the conversation!</Text>
+                  </View>
+                }
+                onContentSizeChange={() => {
+                  flatListRef.current?.scrollToEnd({ animated: true });
+                }}
+              />
+            )}
+
+            {/* Input */}
+            <View style={styles.chatInputContainer}>
+              <View style={styles.chatInputWrapper}>
+                <TextInput
+                  style={styles.chatInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#999"
+                  value={newMessage}
+                  onChangeText={setNewMessage}
+                  multiline
+                  maxLength={500}
+                  editable={!sending}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.chatSendButton,
+                    (!newMessage.trim() || sending) && styles.chatSendButtonDisabled
+                  ]}
+                  onPress={sendMessage}
+                  disabled={!newMessage.trim() || sending}
+                  activeOpacity={0.7}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons
+                      name="send"
+                      size={20}
+                      color={newMessage.trim() ? '#FFFFFF' : '#999'}
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { ChatModal } from '../AccessPoint/components/Chatsystem/ChatModal';
 import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
@@ -45,7 +44,6 @@ const Report: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [chatModalVisible, setChatModalVisible] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -884,17 +882,15 @@ const Report: React.FC = () => {
         {/* Floating Chat Head - Only show when active case exists */}
         {activeCase && (
           <FloatingChatHead
-            onPress={() => setChatModalVisible(true)}
+            onPress={() => {
+              router.push({
+                pathname: '/screens/Home/ChatScreen',
+                params: { report_id: activeCase.report_id },
+              });
+            }}
             unreadCount={0} // TODO: Calculate unread count from messages
           />
         )}
-
-        {/* Chat Modal */}
-        <ChatModal
-          visible={chatModalVisible}
-          onClose={() => setChatModalVisible(false)}
-          activeCase={activeCase}
-        />
       </View>
     </LinearGradient>
   );
