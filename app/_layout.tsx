@@ -1,4 +1,5 @@
 import { EventType } from '@notifee/react-native';
+import notifee from '@notifee/react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { useEffect, useRef, ErrorInfo, ReactNode } from 'react';
@@ -9,9 +10,11 @@ import {
   addNotificationResponseListener,
   getInitialNotification,
   initializeNotifications,
-  registerBackgroundEventHandler
+  registerBackgroundEventHandler,
+  displayChatNotification
 } from './screens/AccessPoint/components/Notifications/notificationService';
 import { onBackgroundNotificationEvent } from '../notifications/backgroundHandler';
+import { supabase } from './lib/supabase';
 
 function RootLayoutContent() {
   const router = useRouter();
@@ -22,10 +25,26 @@ function RootLayoutContent() {
   const originalConsoleErrorRef = useRef<typeof console.error | null>(null);
   const networkUnsubscribe = useRef<(() => void) | null>(null);
   const isNavigatingToOffline = useRef(false);
+  const globalChatChannelRef = useRef<any>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+  const currentRouteRef = useRef<string>('');
+  const appStateSubscriptionRef = useRef<any>(null);
+  const authSubscriptionRef = useRef<any>(null);
+  const foregroundUnsubscribeRef = useRef<(() => void) | null>(null);
 
   // Use useCallback to memoize handlers and prevent re-renders
   const handleNavigation = React.useCallback((notificationData: any, notification: any) => {
     try {
+      // Handle chat message notifications
+      if (notificationData?.type === 'chat_message' && notificationData?.report_id) {
+        // Navigate to ChatScreen with the report_id
+        router.push({
+          pathname: '/screens/Home/ChatScreen',
+          params: { report_id: notificationData.report_id },
+        });
+        return;
+      }
+      
       // Navigate based on notification type
       if (notificationData?.type === 'navigation' || notificationData?.navigation) {
         // Navigate to notification screen with the notification data
@@ -223,41 +242,27 @@ function RootLayoutContent() {
       }
     });
 
-    // Initialize notification service and request permissions on app start
-    // Wrap in try-catch to handle keep-awake errors
+    // Check for initial notification (if app was opened from a notification)
+    // Note: Notification permission is already requested in index.tsx
+    // This is just to handle the case where app was opened from a notification
     (async () => {
       try {
-        const success = await initializeNotifications();
-        if (success) {
-          console.log('Notifications initialized successfully');
-          
-          // Check if app was opened from a notification
-          try {
-            const initialNotification = await getInitialNotification();
-            if (initialNotification) {
-              console.log('App opened from notification:', initialNotification);
-              handleNotificationTap(initialNotification);
-            }
-          } catch (error: any) {
-            // Suppress keep-awake related errors
-            const errorMsg = error?.message || String(error) || '';
-            if (!errorMsg.toLowerCase().includes('keep awake') && 
-                !errorMsg.toLowerCase().includes('unable to activate keep awake')) {
-              console.error('Error getting initial notification:', error);
-            }
-          }
-        } else {
-          console.warn('Notification permissions were not granted');
+        // Check if app was opened from a notification
+        const initialNotification = await getInitialNotification();
+        if (initialNotification) {
+          console.log('App opened from notification:', initialNotification);
+          handleNotificationTap(initialNotification);
         }
       } catch (error: any) {
         // Suppress keep-awake related errors
         const errorMsg = error?.message || String(error) || '';
         if (!errorMsg.toLowerCase().includes('keep awake') && 
             !errorMsg.toLowerCase().includes('unable to activate keep awake')) {
-          console.error('Error initializing notifications:', error);
+          console.error('Error getting initial notification:', error);
         }
       }
     })();
+
 
     // Set up listener for when notification is received while app is open
     notificationUnsubscribe.current = addNotificationReceivedListener((event) => {
@@ -273,6 +278,205 @@ function RootLayoutContent() {
       handleNotificationTap(event);
     });
 
+    // Set up foreground event handler for notification taps
+    // This handles when user taps a notification while app is in foreground
+    foregroundUnsubscribeRef.current = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS) {
+        console.log('User tapped foreground notification', detail.notification);
+        
+        // Navigate to home page when notification is tapped
+        try {
+          router.push('/screens/Home/Home');
+        } catch (error) {
+          console.error('Error navigating to home:', error);
+        }
+      }
+    });
+
+    // Update current route ref when segments change
+    currentRouteRef.current = segments.join('/');
+
+    // Function to set up global chat message listener
+    // Note: Supabase real-time subscriptions work when app is in background (not killed)
+    // but may not work when app is completely closed. For true background notifications
+    // when app is closed, you would need a push notification service (FCM, OneSignal, etc.)
+    const setupGlobalChatListener = async () => {
+      try {
+        // Get current user ID
+        const { data: { session } } = await supabase.auth.getSession();
+        currentUserIdRef.current = session?.user?.id || null;
+
+        if (!currentUserIdRef.current) {
+          if (__DEV__) {
+            console.log('No user session, skipping global chat listener setup');
+          }
+          return;
+        }
+
+        // Remove existing channel if any
+        if (globalChatChannelRef.current) {
+          supabase.removeChannel(globalChatChannelRef.current);
+        }
+
+        // Listen for all new messages
+        const channel = supabase
+          .channel('global-chat-messages', {
+            config: {
+              // Enable presence for better connection management
+              presence: {
+                key: currentUserIdRef.current,
+              },
+            },
+          })
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'tbl_messages',
+            },
+            async (payload) => {
+              try {
+                const newMessage = payload.new as any;
+                
+                if (__DEV__) {
+                  console.log('New message received in global listener:', newMessage);
+                }
+                
+                // Check if message is from police_office or admin (not from current user)
+                const isFromSupport = newMessage.sender_type === 'police_office' || newMessage.sender_type === 'admin';
+                const isFromCurrentUser = newMessage.sender_id === currentUserIdRef.current;
+                
+                // Check if this message is for a report that belongs to the current user
+                const { data: reportData } = await supabase
+                  .from('tbl_reports')
+                  .select('reporter_id')
+                  .eq('report_id', newMessage.report_id)
+                  .single();
+                
+                const isUserReport = reportData?.reporter_id === currentUserIdRef.current;
+                
+                // Check if user is currently viewing this chat screen
+                const currentPath = currentRouteRef.current || segments.join('/');
+                const isOnChatScreen = currentPath.includes('ChatScreen');
+                
+                // Check app state
+                const currentAppState = AppState.currentState;
+                const isAppInBackground = currentAppState !== 'active';
+                
+                if (__DEV__) {
+                  console.log('Message notification check:', {
+                    isFromSupport,
+                    isFromCurrentUser,
+                    isUserReport,
+                    isOnChatScreen,
+                    isAppInBackground,
+                    appState: currentAppState,
+                  });
+                }
+                
+                // Show notification if:
+                // 1. Message is from support/admin AND not from current user
+                // 2. This is the user's report
+                // 3. App is in background OR user is not currently viewing this chat screen
+                const shouldShowNotification = 
+                  isFromSupport && 
+                  !isFromCurrentUser && 
+                  isUserReport && 
+                  (isAppInBackground || !isOnChatScreen);
+                
+                if (shouldShowNotification) {
+                  if (__DEV__) {
+                    console.log('📨 Showing chat notification for message:', newMessage.message_content);
+                    console.log('📨 Report ID:', newMessage.report_id);
+                    console.log('📨 Sender type:', newMessage.sender_type);
+                  }
+                  try {
+                    const notificationId = await displayChatNotification(
+                      newMessage.message_content,
+                      newMessage.report_id,
+                      newMessage.sender_type
+                    );
+                    if (__DEV__) {
+                      console.log('✅ Notification sent with ID:', notificationId);
+                    }
+                  } catch (notifError) {
+                    console.error('❌ Error displaying chat notification:', notifError);
+                  }
+                } else {
+                  if (__DEV__) {
+                    console.log('⏭️ Skipping notification:', {
+                      isFromSupport,
+                      isFromCurrentUser,
+                      isUserReport,
+                      isOnChatScreen,
+                      isAppInBackground,
+                    });
+                  }
+                }
+              } catch (error) {
+                // Log errors for debugging
+                if (__DEV__) {
+                  console.error('Error in global chat listener:', error);
+                }
+              }
+            }
+          )
+          .subscribe((status) => {
+            if (__DEV__) {
+              console.log('Global chat channel subscription status:', status);
+            }
+            // Re-subscribe if connection is lost
+            if (status === 'SUBSCRIBED') {
+              if (__DEV__) {
+                console.log('Global chat listener subscribed successfully');
+              }
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              if (__DEV__) {
+                console.warn('Global chat channel error, attempting to re-subscribe...');
+              }
+              // Retry subscription after a delay
+              setTimeout(() => {
+                setupGlobalChatListener();
+              }, 3000);
+            }
+          });
+
+        globalChatChannelRef.current = channel;
+      } catch (error) {
+        if (__DEV__) {
+          console.error('Error setting up global chat listener:', error);
+        }
+      }
+    };
+
+    // Set up global chat message listener
+    setupGlobalChatListener();
+
+    // Monitor AppState to re-subscribe when app comes to foreground
+    appStateSubscriptionRef.current = AppState.addEventListener('change', (nextAppState) => {
+      if (__DEV__) {
+        console.log('App state changed:', nextAppState);
+      }
+      
+      // When app comes to foreground, ensure subscription is active
+      if (nextAppState === 'active') {
+        // Re-setup listener to ensure it's connected
+        setTimeout(() => {
+          setupGlobalChatListener();
+        }, 1000);
+      }
+    });
+
+    // Listen for auth state changes to update user ID and re-setup listener
+    authSubscriptionRef.current = supabase.auth.onAuthStateChange((event, session) => {
+      currentUserIdRef.current = session?.user?.id || null;
+      // Re-setup listener when auth state changes
+      if (session?.user?.id) {
+        setupGlobalChatListener();
+      }
+    });
+
     // Cleanup listeners on unmount
     return () => {
       if (notificationUnsubscribe.current) {
@@ -283,9 +487,29 @@ function RootLayoutContent() {
         responseUnsubscribe.current();
         responseUnsubscribe.current = null;
       }
+      // Unsubscribe from foreground events
+      if (foregroundUnsubscribeRef.current) {
+        foregroundUnsubscribeRef.current();
+        foregroundUnsubscribeRef.current = null;
+      }
       if (networkUnsubscribe.current) {
         networkUnsubscribe.current();
         networkUnsubscribe.current = null;
+      }
+      // Remove global chat channel
+      if (globalChatChannelRef.current) {
+        supabase.removeChannel(globalChatChannelRef.current);
+        globalChatChannelRef.current = null;
+      }
+      // Remove AppState listener
+      if (appStateSubscriptionRef.current) {
+        appStateSubscriptionRef.current.remove();
+        appStateSubscriptionRef.current = null;
+      }
+      // Remove auth subscription
+      if (authSubscriptionRef.current) {
+        authSubscriptionRef.current.data.subscription.unsubscribe();
+        authSubscriptionRef.current = null;
       }
       // Remove global error handlers
       if (typeof window !== 'undefined' && window.removeEventListener && rejectionHandlerRef.current) {
@@ -297,6 +521,11 @@ function RootLayoutContent() {
       }
     };
   }, [router, handleNotificationTap, handleNavigation, segments]);
+
+  // Update route ref when segments change
+  useEffect(() => {
+    currentRouteRef.current = segments.join('/');
+  }, [segments]);
 
   return (
     <AuthProvider>

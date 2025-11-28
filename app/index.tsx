@@ -1,10 +1,39 @@
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
-import { ActivityIndicator, View } from 'react-native'
+import { ActivityIndicator, PermissionsAndroid, Platform, View } from 'react-native'
+import { StorageService } from '../utils/storage'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
-import { StorageService } from '../utils/storage'
 import { initializeNotifications } from './screens/AccessPoint/components/Notifications/notificationService'
+
+async function requestNotificationPermissions() {
+  if (Platform.OS === 'android' && Platform.Version >= 33) {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      )
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        if (__DEV__) {
+          console.log('✅ Notification permission granted')
+        }
+        return true
+      } else {
+        if (__DEV__) {
+          console.log('⚠️ Notification permission denied')
+        }
+        return false
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.error('Error requesting notification permission:', error)
+      }
+      return false
+    }
+  }
+  // For Android < 33, permissions are granted by default
+  // For iOS, handled by initializeNotifications
+  return true
+}
 
 export default function Index() {
   const router = useRouter()
@@ -12,11 +41,26 @@ export default function Index() {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      // Request notification permission on app startup
+      // Request Android notification permission FIRST (for Android 13+)
       try {
+        await requestNotificationPermissions()
+      } catch (error) {
+        if (__DEV__) {
+          console.error('Error requesting Android notification permission:', error)
+        }
+      }
+
+      // Request notification permission and initialize notifications
+      // This will show the system permission dialog if not already granted
+      try {
+        if (__DEV__) {
+          console.log('Initializing notifications...')
+        }
         await initializeNotifications()
       } catch (error) {
-        console.error('Error initializing notifications:', error)
+        if (__DEV__) {
+          console.error('Error initializing notifications:', error)
+        }
       }
 
       await loadUser()
