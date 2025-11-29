@@ -204,15 +204,10 @@ const Home: React.FC = () => {
     setSendingSOS(true);
 
     try {
-      // OPTIMIZED: Run operations in parallel where possible
-      // 1. Get session and check location permission in parallel
-      const [sessionResult, locationPermission] = await Promise.all([
-        supabase.auth.getSession(),
-        Location.getForegroundPermissionsAsync()
-      ]);
-
-      const authUserId = sessionResult.data?.session?.user?.id || null;
-      const userEmail = sessionResult.data?.session?.user?.email || null;
+      // 1. Fetch User ID from Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      const authUserId = session?.user?.id || null;
+      const userEmail = session?.user?.email || null;
 
       if (!authUserId && !userEmail) {
         Alert.alert('Error', 'Please log in to send SOS');
@@ -221,48 +216,42 @@ const Home: React.FC = () => {
         return;
       }
 
-      // Request location permission if not granted
-      let locationStatus = locationPermission.status;
-      if (locationStatus !== 'granted') {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        locationStatus = status;
-        if (status !== 'granted') {
-          Alert.alert(
-            'Location Permission Required',
-            'Location permission is required to send SOS. Please enable it in settings.',
-            [{ text: 'OK' }]
-          );
-          setSendingSOS(false);
-          setSosCountdown(0);
-          return;
-        }
-      }
-
-      // 2. OPTIMIZED: Single query for user info (try user_id first, then email if needed)
+      // 2. Fetch User Info from database (try by user_id first, then by email)
       let userInfo = null;
+      let reporterId = null;
       let userError = null;
-      
+
+      // Try to get user by user_id (matching Supabase auth user ID)
       if (authUserId) {
-        const result = await supabase
+        const { data, error } = await supabase
           .from('tbl_users')
           .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
           .eq('user_id', authUserId)
           .single();
-        userInfo = result.data;
-        userError = result.error;
+        
+        if (data && !error) {
+          userInfo = data;
+          reporterId = data.user_id;
+        }
       }
-      
+
+      // If not found by user_id, try by email
       if (!userInfo && userEmail) {
-        const result = await supabase
+        const { data, error } = await supabase
           .from('tbl_users')
           .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
           .eq('email', userEmail)
           .single();
-        userInfo = result.data;
-        userError = result.error;
+        
+        if (data && !error) {
+          userInfo = data;
+          reporterId = data.user_id;
+        } else {
+          userError = error;
+        }
       }
 
-      if (!userInfo || !userInfo.user_id) {
+      if (!userInfo || !reporterId) {
         console.error('Error fetching user info:', userError);
         Alert.alert('Error', 'Unable to fetch user information. Please try again.');
         setSendingSOS(false);
@@ -270,37 +259,35 @@ const Home: React.FC = () => {
         return;
       }
 
-      const reporterId = userInfo.user_id;
+      // 3. Fetch GPS Location
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Permission Required',
+          'Location permission is required to send SOS. Please enable it in settings.',
+          [{ text: 'OK' }]
+        );
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
 
-      // 3. OPTIMIZED: Get location and reverse geocode in parallel
-      const [currentLocation, geocodeResult] = await Promise.all([
-        Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced, // Changed from High to Balanced for faster response
-        }),
-        // Start reverse geocode early (it can run in background)
-        Promise.resolve(null) // We'll do geocoding after getting location
-      ]);
-
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
       const latitude = currentLocation.coords.latitude;
       const longitude = currentLocation.coords.longitude;
 
-      // Reverse geocode (non-blocking - use cached if available)
-      let locationCity: string | null = null;
-      let locationBarangay: string | null = null;
-      try {
-        const geocode = await reverseGeocode(latitude, longitude);
-        locationCity = geocode.city || null;
-        locationBarangay = geocode.barangay || null;
-      } catch (geocodeError) {
-        // If geocoding fails, continue without it (GPS coordinates are enough)
-        console.warn('Geocoding failed, continuing with GPS only:', geocodeError);
-      }
+      // Reverse geocode to get city and barangay from GPS coordinates ONLY
+      const geocodeResult = await reverseGeocode(latitude, longitude);
+      const locationCity = geocodeResult.city || null; // Only from GPS, no profile fallback
+      const locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
 
       // Create description with user info
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
-      const locationAddress = locationBarangay && locationCity 
-        ? `${locationBarangay}, ${locationCity}` 
-        : `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      const locationAddress = geocodeResult.fullAddress || 
+        (locationBarangay && locationCity ? `${locationBarangay}, ${locationCity}` : null) ||
+        `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       
       const description = `EMERGENCY SOS ALERT\n\n` +
         `Reporter: ${userName}\n` +
@@ -314,23 +301,44 @@ const Home: React.FC = () => {
 
       const now = new Date().toISOString();
 
-      // 4. Create report payload and send immediately
+      // Validate reporter_id before proceeding
+      if (!reporterId) {
+        console.error('❌ No reporter_id available - cannot create report');
+        Alert.alert('Error', 'Unable to identify user. Please log in again.');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
+
+      console.log('✅ Reporter ID validated:', reporterId);
+      console.log('✅ User info:', {
+        name: userName,
+        email: userInfo.email,
+        city: userInfo.city,
+        barangay: userInfo.barangay
+      });
+
+      // 4. Create report payload with default category "Emergency" and role "witness"
       const reportPayload = {
         reporter_id: reporterId,
         assigned_office_id: null,
-        category: 'Emergency',
+        category: 'Emergency', // Default category
         description: description,
         status: 'pending',
         latitude: latitude,
         longitude: longitude,
-        location_city: locationCity,
-        location_barangay: locationBarangay,
+        location_city: locationCity, // From GPS geocoding, fallback to user profile
+        location_barangay: locationBarangay, // From GPS geocoding, fallback to user profile
         remarks: `SOS triggered via mobile app. Role: Witness. User: ${userName}`,
         created_at: now,
         updated_at: now,
       };
 
-      // 5. OPTIMIZED: Send SOS report to database (removed excessive logging)
+      // 5. Send SOS report to database
+      console.log('📤 Attempting to insert SOS report to database...');
+      console.log('📋 Report payload:', JSON.stringify(reportPayload, null, 2));
+      console.log('📋 Reporter ID type:', typeof reporterId, 'Value:', reporterId);
+      
       const { data, error } = await supabase
         .from('tbl_reports')
         .insert([reportPayload])
@@ -339,21 +347,100 @@ const Home: React.FC = () => {
 
       if (error) {
         console.error('❌ SOS submission error:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error hint:', error.hint);
+        
         Alert.alert(
           'Error',
-          `Failed to send SOS: ${error.message || 'Unknown error'}`,
+          `Failed to send SOS: ${error.message || 'Unknown error'}\n\nError Code: ${error.code || 'N/A'}\n\nPlease check the console for details.`,
           [{ text: 'OK' }]
         );
         setSendingSOS(false);
         setSosCountdown(0);
         return;
       } else {
-        console.log('✅ SOS submitted successfully:', data.report_id);
+        console.log('✅ SOS submitted successfully:', data);
+        console.log('📋 Report ID:', data.report_id);
+        console.log('📋 Status:', data.status);
+        console.log('📋 Reporter ID:', data.reporter_id);
+        console.log('📋 Category:', data.category);
         
-        // OPTIMIZED: Single refresh attempt (removed multiple delayed refreshes)
-        checkActiveCase();
+        // Verify the report was created with correct status
+        if (data.status && (data.status.toLowerCase() === 'pending' || data.status.toLowerCase() === 'responding')) {
+          console.log('✅ Report has active status - should appear in active case');
+        } else {
+          console.warn('⚠️ Report status is not active:', data.status);
+        }
         
-        // Show success alert and navigate immediately
+        // Directly verify the report exists in database and set active case immediately
+        try {
+          console.log('🔍 Verifying report exists in database with ID:', data.report_id);
+          const { data: verifyData, error: verifyError } = await supabase
+            .from('tbl_reports')
+            .select('*')
+            .eq('report_id', data.report_id)
+            .single();
+          
+          if (verifyError) {
+            console.error('❌ Verification failed - report not found in database:', verifyError);
+            console.error('❌ This means the insert may have failed even though no error was returned');
+          } else if (verifyData) {
+            console.log('✅ Verified report exists in database');
+            console.log('📋 Verified report data:', JSON.stringify(verifyData, null, 2));
+            if (verifyData.status?.toLowerCase() === 'pending' || verifyData.status?.toLowerCase() === 'responding') {
+              console.log('✅ Report is active - forcing active case update');
+            }
+          } else {
+            console.warn('⚠️ Verification returned no data - report may not exist');
+          }
+        } catch (verifyErr) {
+          console.error('❌ Error verifying report:', verifyErr);
+        }
+        
+        // Also try to query all reports by this reporter to see if it appears
+        try {
+          console.log('🔍 Querying all reports for reporter_id:', reporterId);
+          const { data: allReports, error: queryError } = await supabase
+            .from('tbl_reports')
+            .select('report_id, status, category, created_at')
+            .eq('reporter_id', reporterId)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          
+          if (queryError) {
+            console.error('❌ Error querying reports:', queryError);
+          } else {
+            console.log('📊 Recent reports for this user:', allReports?.length || 0);
+            if (allReports && allReports.length > 0) {
+              console.log('📋 Reports:', JSON.stringify(allReports, null, 2));
+              const foundReport = allReports.find(r => r.report_id === data.report_id);
+              if (foundReport) {
+                console.log('✅ SOS report found in query results!');
+              } else {
+                console.warn('⚠️ SOS report NOT found in query results - may not be saved');
+              }
+            }
+          }
+        } catch (queryErr) {
+          console.error('❌ Error in query check:', queryErr);
+        }
+        
+        // Immediately refresh active case after successful SOS submission
+        console.log('🔄 Immediately refreshing active case after SOS submission...');
+        await checkActiveCase();
+        
+        // Refresh multiple times to ensure it's caught (database replication delay)
+        const refreshAttempts = [300, 600, 1000, 1500, 2000];
+        refreshAttempts.forEach((delay) => {
+          setTimeout(async () => {
+            console.log(`🔄 Refresh attempt after ${delay}ms...`);
+            await checkActiveCase();
+          }, delay);
+        });
+        
+        // Show success alert and navigate to Chat Screen
         const reportIdForDisplay = data.report_id.substring(0, 8) + '...';
         Alert.alert(
           'SOS Sent Successfully',
@@ -361,7 +448,10 @@ const Home: React.FC = () => {
           [{ 
             text: 'OK',
             onPress: () => {
-              // Navigate to Chat Screen immediately
+              // Final refresh when user dismisses alert
+              console.log('🔄 Final refresh after alert dismissal...');
+              setTimeout(() => checkActiveCase(), 200);
+              // Navigate to Chat Screen with the new report_id
               router.push({
                 pathname: '/screens/Home/ChatScreen',
                 params: { report_id: data.report_id },
@@ -369,6 +459,24 @@ const Home: React.FC = () => {
             }
           }]
         );
+        
+        // Log complete report data for debugging
+        console.log('='.repeat(50));
+        console.log('📋 COMPLETE REPORT DATA FOR DATABASE VERIFICATION:');
+        console.log('='.repeat(50));
+        console.log('Report ID:', data.report_id);
+        console.log('Reporter ID:', data.reporter_id);
+        console.log('Category:', data.category);
+        console.log('Status:', data.status);
+        console.log('Created At:', data.created_at);
+        console.log('Location:', data.location_city, data.location_barangay);
+        console.log('GPS:', data.latitude, data.longitude);
+        console.log('='.repeat(50));
+        console.log('💡 To verify in Supabase:');
+        console.log('1. Go to Table Editor → tbl_reports');
+        console.log('2. Search for report_id:', data.report_id);
+        console.log('3. Or filter by reporter_id:', data.reporter_id);
+        console.log('='.repeat(50));
       }
     } catch (error: any) {
       console.error('Error sending SOS:', error);
@@ -388,56 +496,49 @@ const Home: React.FC = () => {
 
     console.log('🔴 SOS Button Clicked!');
     
-    // OPTIMIZED: Use activeCase from state first (fastest check)
-    let currentActiveCase = activeCase;
+    // Check database directly for active case (don't rely on state)
+    const { data: { session } } = await supabase.auth.getSession();
+    const authUserId = session?.user?.id || null;
+    const userEmail = session?.user?.email || null;
+
+    let reporterId = null;
+    if (authUserId) {
+      const { data: userData } = await supabase
+        .from('tbl_users')
+        .select('user_id')
+        .eq('user_id', authUserId)
+        .single();
+      if (userData) reporterId = userData.user_id;
+    }
+
+    if (!reporterId && userEmail) {
+      const { data: userData } = await supabase
+        .from('tbl_users')
+        .select('user_id')
+        .eq('email', userEmail)
+        .single();
+      if (userData) reporterId = userData.user_id;
+    }
+
+    let currentActiveCase = activeCase; // Use current state first
     
-    // Only check database if no active case in state (avoid unnecessary query)
-    if (!currentActiveCase) {
-      // Quick check: Get session and reporter_id in parallel
-      const [sessionResult] = await Promise.all([
-        supabase.auth.getSession()
-      ]);
-      
-      const authUserId = sessionResult.data?.session?.user?.id || null;
-      const userEmail = sessionResult.data?.session?.user?.email || null;
+    // If no activeCase in state, check database directly
+    if (!currentActiveCase && reporterId) {
+      const { data: reports } = await supabase
+        .from('tbl_reports')
+        .select('*')
+        .eq('reporter_id', reporterId)
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-      if (authUserId || userEmail) {
-        // Quick query - try user_id first, fallback to email
-        let userData = null;
-        if (authUserId) {
-          const result = await supabase
-            .from('tbl_users')
-            .select('user_id')
-            .eq('user_id', authUserId)
-            .single();
-          userData = result.data;
-        }
-        
-        if (!userData && userEmail) {
-          const result = await supabase
-            .from('tbl_users')
-            .select('user_id')
-            .eq('email', userEmail)
-            .single();
-          userData = result.data;
-        }
-        
-        const reporterId = userData?.user_id;
-        
-        // Only query reports if we have reporterId
-        if (reporterId) {
-          const { data: reports } = await supabase
-            .from('tbl_reports')
-            .select('*')
-            .eq('reporter_id', reporterId)
-            .in('status', ['pending', 'responding'])
-            .order('created_at', { ascending: false })
-            .limit(1);
+      const activeReports = reports?.filter(report => {
+        const status = report.status?.toLowerCase();
+        // Only show pending and responding cases (exclude resolved, closed, and cancelled)
+        return status === 'pending' || status === 'responding';
+      }) || [];
 
-          if (reports && reports.length > 0) {
-            currentActiveCase = reports[0] as any;
-          }
-        }
+      if (activeReports.length > 0) {
+        currentActiveCase = activeReports[0] as any;
       }
     }
 

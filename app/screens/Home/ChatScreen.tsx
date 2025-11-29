@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -28,7 +27,6 @@ interface Message {
 
 const ChatScreen: React.FC = () => {
   const router = useRouter();
-  const segments = useSegments();
   const { report_id } = useLocalSearchParams<{ report_id: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -36,30 +34,6 @@ const ChatScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
   const channelRef = useRef<any>(null);
-  const currentUserIdRef = useRef<string | null>(null);
-  const appStateRef = useRef(AppState.currentState);
-  const [appState, setAppState] = useState(AppState.currentState);
-
-  // Get current user ID on mount
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      currentUserIdRef.current = session?.user?.id || null;
-    };
-    getCurrentUser();
-  }, []);
-
-  // Monitor app state for background/foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      appStateRef.current = nextAppState;
-      setAppState(nextAppState);
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
 
   useEffect(() => {
     if (report_id) {
@@ -128,13 +102,8 @@ const ChatScreen: React.FC = () => {
           table: 'tbl_messages',
           filter: `report_id=eq.${report_id}`,
         },
-        async (payload) => {
-          // Get the new message data
-          const newMessageData = payload.new as Message;
-          
+        () => {
           // Reload messages when a new message is inserted
-          // Note: Notifications are handled by the global listener in _layout.tsx
-          // This ensures notifications work even when not on the chat screen
           loadMessages();
         }
       )
