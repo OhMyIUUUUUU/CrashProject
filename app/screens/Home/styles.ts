@@ -883,8 +883,8 @@ export const styles = StyleSheet.create({
     minHeight: 100,
   },
   roleButtonSelected: {
-    borderColor: '#FF6B6B',
-    backgroundColor: '#FFF5F5',
+    borderColor: '#E0E0E0',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   roleButtonText: {
     fontSize: 16,
@@ -1025,6 +1025,17 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  submitButtonDisabled: {
+    shadowColor: '#E0E0E0',
+    shadowOpacity: 0.2,
+    elevation: 2,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+  },
+  submitButtonTextDisabled: {
+    color: '#888888',
+    fontWeight: '500',
+  },
   submitButtonIcon: {
     width: 32,
     height: 32,
@@ -1034,6 +1045,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'absolute',
     right: 12,
+  },
+  submitButtonIconDisabled: {
+    backgroundColor: '#F5F5F5',
   },
 
   // Profile Screen - Modernized

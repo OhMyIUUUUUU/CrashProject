@@ -904,6 +904,7 @@ const Home: React.FC = () => {
         {activeCase && (
           <FloatingChatHead
             onPress={() => {
+              // Navigate to ChatScreen (same as SOS button) when message icon is clicked
               router.push({
                 pathname: '/screens/Home/ChatScreen',
                 params: { report_id: activeCase.report_id },

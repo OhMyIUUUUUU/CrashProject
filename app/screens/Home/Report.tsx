@@ -10,7 +10,6 @@ import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingC
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
 import { reverseGeocode } from '../../../utils/geocoding';
-import { ChatBox } from '../AccessPoint/components/ChatBox';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
 import { styles } from './styles';
@@ -43,9 +42,6 @@ const Report: React.FC = () => {
   const [role, setRole] = useState<RoleType>('victim');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
 
   // Monitor network connectivity - redirect to offline mode if connection is lost
@@ -351,70 +347,6 @@ const Report: React.FC = () => {
     });
   };
 
-  const handleCancelReport = async () => {
-    if (!activeCase || cancelling || countdown > 0) return;
-
-    Alert.alert(
-      'Cancel Report',
-      'Are you sure you want to cancel this active case?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: () => {
-            // Start 5-second countdown
-            setCountdown(5);
-            setCancelling(true);
-
-            // Clear any existing interval
-            if (countdownIntervalRef.current) {
-              clearInterval(countdownIntervalRef.current);
-            }
-
-            // Start countdown
-            countdownIntervalRef.current = setInterval(() => {
-              setCountdown((prev) => {
-                if (prev <= 1) {
-                  // Countdown finished, cancel the report
-                  if (countdownIntervalRef.current) {
-                    clearInterval(countdownIntervalRef.current);
-                    countdownIntervalRef.current = null;
-                  }
-                  
-                  // Cancel the report
-                  cancelReport(activeCase.report_id, activeCase).then((success) => {
-                    setCancelling(false);
-                    setCountdown(0);
-                    if (success) {
-                      Alert.alert('Success', 'Report has been cancelled successfully.');
-                      // Clear form
-                      setDescription('');
-                      setRole('victim');
-                      setAttachments([]);
-                    } else {
-                      Alert.alert('Error', 'Failed to cancel report. Please try again.');
-                    }
-                  });
-                  return 0;
-                }
-                return prev - 1;
-              });
-            }, 1000);
-          },
-        },
-      ]
-    );
-  };
-
-  // Cleanup countdown on unmount
-  useEffect(() => {
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-      }
-    };
-  }, []);
 
   const handleSubmit = async () => {
     if (activeCase) {
@@ -632,31 +564,6 @@ const Report: React.FC = () => {
       style={styles.gradientContainer}
     >
       <View style={styles.container}>
-        {/* Header with Glassmorphism Blur */}
-        <View style={styles.reportHeader}>
-          <BlurView 
-            intensity={100} 
-            tint="light" 
-            style={styles.reportHeaderBlur}
-          >
-            <View style={styles.reportHeaderContent}>
-              <View style={styles.reportHeaderIconContainer}>
-                <BlurView 
-                  intensity={80} 
-                  tint="light" 
-                  style={styles.reportHeaderIconBlur}
-                >
-                  <Ionicons name="document-text" size={28} color="#FF6B6B" />
-                </BlurView>
-              </View>
-              <View style={styles.reportHeaderTextContainer}>
-                <Text style={styles.reportHeaderTitle}>Submit Report</Text>
-                <Text style={styles.reportHeaderSubtitle}>Report an incident or emergency</Text>
-              </View>
-            </View>
-          </BlurView>
-        </View>
-
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -834,55 +741,50 @@ const Report: React.FC = () => {
             </View>
           </View>
 
-          {/* Submit Button or Cancel Report Button */}
-          {activeCase ? (
-            <TouchableOpacity
-              style={styles.cancelReportButton}
-              onPress={handleCancelReport}
-              disabled={cancelling || countdown > 0}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.cancelReportButtonText}>
-                {countdown > 0 ? `Cancelling in ${countdown}s...` : cancelling ? 'Cancelling...' : 'Cancel Report'}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleSubmit}
-              disabled={submitting}
-              activeOpacity={0.8}
-            >
+          {/* Submit Button - Disabled when active case exists */}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              activeCase && styles.submitButtonDisabled
+            ]}
+            onPress={handleSubmit}
+            disabled={submitting || !!activeCase}
+            activeOpacity={activeCase ? 1 : 0.8}
+          >
+            {activeCase ? (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 50 }} />
+            ) : (
               <LinearGradient
                 colors={['#FF5252', '#FF6B6B', '#FF8787']}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               />
-              <Text style={styles.submitButtonText}>
-                {submitting ? 'Submitting...' : 'Submit'}
-              </Text>
-              <View style={styles.submitButtonIcon}>
-                <Ionicons 
-                  name="checkmark" 
-                  size={20} 
-                  color="#FF5252" 
-                />
-              </View>
-            </TouchableOpacity>
-          )}
+            )}
+            <Text style={[
+              styles.submitButtonText,
+              activeCase && styles.submitButtonTextDisabled
+            ]}>
+              {submitting ? 'Submitting...' : activeCase ? 'Report Active' : 'Submit'}
+            </Text>
+            <View style={[
+              styles.submitButtonIcon,
+              activeCase && styles.submitButtonIconDisabled
+            ]}>
+              <Ionicons 
+                name={activeCase ? "lock-closed" : "checkmark"} 
+                size={20} 
+                color={activeCase ? "#999999" : "#FF5252"} 
+              />
+            </View>
+          </TouchableOpacity>
         </ScrollView>
-
-        {/* ChatBox Component */}
-        <ChatBox onSendMessage={handleSendMessage} />
-
-        {/* Bottom Navigation */}
-        <CustomTabBar />
 
         {/* Floating Chat Head - Only show when active case exists */}
         {activeCase && (
           <FloatingChatHead
             onPress={() => {
+              // Navigate to ChatScreen (same as SOS button) when message icon is clicked
               router.push({
                 pathname: '/screens/Home/ChatScreen',
                 params: { report_id: activeCase.report_id },
@@ -891,6 +793,9 @@ const Report: React.FC = () => {
             unreadCount={0} // TODO: Calculate unread count from messages
           />
         )}
+
+        {/* Bottom Navigation */}
+        <CustomTabBar />
       </View>
     </LinearGradient>
   );
