@@ -221,15 +221,23 @@ export async function displayNotification(
     }
 
     // Display notification with settings to ensure it shows in tray
+    // Convert all data values to strings (notifee requirement)
+    const stringifiedData: Record<string, string> = {};
+    if (data) {
+      Object.keys(data).forEach(key => {
+        stringifiedData[key] = String(data[key]);
+      });
+    }
+    
     return await notifee.displayNotification({
     title,
     body,
     data: {
-      ...data,
-      type: data?.type || 'default',
-      timestamp: Date.now(),
+      ...stringifiedData,
+      type: String(data?.type || 'default'),
+      timestamp: String(Date.now()),
       // Add navigation data to open app when tapped
-      navigation: true,
+      navigation: 'true',
     },
     android: {
       channelId,

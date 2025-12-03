@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build:apk": "java -jar \"C:\\Users\\ADMIN\\Downloads\\convert\\bundletool.jar\" build-apks --bundle=app.aab --output=app_signed.apks --mode=universal --ks=\"C:\\Users\\ADMIN\\.android\\debug.keystore\" --ks-pass=pass:android --ks-key-alias=androiddebugkey --key-pass=pass:android"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
