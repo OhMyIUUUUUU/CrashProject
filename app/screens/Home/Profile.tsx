@@ -2,13 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import { useAuth } from '../../contexts/AuthContext';
-import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
 import { StorageService } from '../../../utils/storage';
+import { ChatBox } from '../AccessPoint/components/ChatBox';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
@@ -30,7 +29,6 @@ interface UserProfileData {
 const Profile: React.FC = () => {
   const router = useRouter();
   const { user, logout, loadUser } = useAuth();
-  const { activeCase } = useActiveCase();
   const [profileData, setProfileData] = useState<UserProfileData | null>(null);
   const [editedProfileData, setEditedProfileData] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -562,19 +560,8 @@ const Profile: React.FC = () => {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Floating Chat Head - Only show when active case exists */}
-        {activeCase && (
-          <FloatingChatHead
-            onPress={() => {
-              // Navigate to ChatScreen (same as SOS button) when message icon is clicked
-              router.push({
-                pathname: '/screens/Home/ChatScreen',
-                params: { report_id: activeCase.report_id },
-              });
-            }}
-            unreadCount={0} // TODO: Calculate unread count from messages
-          />
-        )}
+        {/* ChatBox Component */}
+        <ChatBox onSendMessage={handleSendMessage} />
 
         {/* Bottom Navigation */}
         <CustomTabBar />

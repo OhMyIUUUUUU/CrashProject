@@ -1,5 +1,4 @@
-import ChatBox from './ChatBox';
-export default ChatBox;
-export { ChatBox };
-export type { Message, ChatBoxRef } from './ChatBox';
+export { default } from './ChatBox';
+export { default as ChatBox } from './ChatBox';
+export type { Message } from './ChatBox';
 

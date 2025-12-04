@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from './ChatBox.styles';
 
@@ -13,16 +13,9 @@ export interface Message {
 interface ChatBoxProps {
   onSendMessage?: (message: string) => void;
   initialMessages?: Message[];
-  showFloatingButton?: boolean; // Control whether to show internal floating button
 }
 
-export interface ChatBoxRef {
-  openChat: () => void;
-  closeChat: () => void;
-  toggleChat: () => void;
-}
-
-const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(({ onSendMessage, initialMessages = [], showFloatingButton = true }, ref) => {
+const ChatBox: React.FC<ChatBoxProps> = ({ onSendMessage, initialMessages = [] }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -55,41 +48,6 @@ const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(({ onSendMessage, ini
       friction: 7,
     }).start();
   };
-
-  const openChat = () => {
-    // Always open the chat, even if already open (brings it to front)
-    setIsOpen(true);
-    Animated.spring(chatAnimation, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 50,
-      friction: 7,
-    }).start();
-    
-    // Scroll to bottom when opening
-    setTimeout(() => {
-      messagesEndRef.current?.scrollToEnd({ animated: true });
-    }, 300);
-  };
-
-  const closeChat = () => {
-    if (isOpen) {
-      setIsOpen(false);
-      Animated.spring(chatAnimation, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 7,
-      }).start();
-    }
-  };
-
-  // Expose methods to parent via ref
-  useImperativeHandle(ref, () => ({
-    openChat,
-    closeChat,
-    toggleChat,
-  }));
 
   const handleSendMessage = () => {
     if (!message.trim()) return;
@@ -219,8 +177,8 @@ const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(({ onSendMessage, ini
         </KeyboardAvoidingView>
       </Animated.View>
 
-      {/* Floating Chat Button - Only show when chat is closed and showFloatingButton is true */}
-      {!isOpen && showFloatingButton && (
+      {/* Floating Chat Button - Only show when chat is closed */}
+      {!isOpen && (
         <TouchableOpacity
           style={styles.floatingChatButton}
           onPress={toggleChat}
@@ -235,9 +193,7 @@ const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(({ onSendMessage, ini
       )}
     </>
   );
-});
-
-ChatBox.displayName = 'ChatBox';
+};
 
 export default ChatBox;
 

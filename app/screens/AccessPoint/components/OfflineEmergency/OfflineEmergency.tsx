@@ -9,7 +9,7 @@ import { StorageService } from '../../../../../utils/storage';
 import { reverseGeocode } from '../../../../../utils/geocoding';
 
 const { width: screenWidth } = Dimensions.get('window');
-const buttonSize = Math.min(screenWidth * 0.6, 220);
+const buttonSize = Math.min(screenWidth * 0.5, 200);
 const isSmallDevice = screenWidth < 375;
 
 const OfflineEmergency: React.FC = () => {
@@ -294,6 +294,7 @@ I need immediate assistance. Please help.`;
         <View style={styles.sosContainer}>
           <Animated.View
             style={[
+              styles.sosButtonWrapper,
               {
                 transform: [
                   { scale: Animated.multiply(pulseAnim, scaleAnim) }
@@ -306,28 +307,11 @@ I need immediate assistance. Please help.`;
               onPressIn={handleSOSPressIn}
               onPressOut={handleSOSPressOut}
               activeOpacity={1}
-              style={[
-                styles.sosButtonNeumorphic,
-                {
-                  width: buttonSize,
-                  height: buttonSize,
-                  borderRadius: buttonSize / 2,
-                }
-              ]}
+              style={styles.sosButton}
             >
-              <View style={[styles.sosButtonInner, {
-                width: buttonSize * 0.85,
-                height: buttonSize * 0.85,
-                borderRadius: (buttonSize * 0.85) / 2,
-              }]}>
-                <View style={styles.sosButtonContent}>
-                  <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
-                    SOS
-                  </Text>
-                  <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08 }]}>
-                    Emergency
-                  </Text>
-                </View>
+              <View style={styles.sosButtonInner}>
+                <Text style={styles.sosText}>SOS</Text>
+                <Text style={styles.sosSubtext}>Press & hold</Text>
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -596,7 +580,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 5,
   },
-  // SOS Button Styles - Neumorphic Design (matching online mode)
+  // SOS Button Styles
   sosContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -604,56 +588,42 @@ const styles = StyleSheet.create({
     marginTop: 40,
     marginBottom: 40,
   },
-  sosButtonNeumorphic: {
-    backgroundColor: '#FFFFFF',
+  sosButtonWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    // Light shadow (top-left) - raised effect
-    shadowColor: '#FF3B30',
-    shadowOffset: { width: -8, height: -8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 2,
-    borderColor: '#FFE5E5',
+  },
+  sosButton: {
+    width: buttonSize,
+    height: buttonSize,
+    borderRadius: buttonSize / 2,
+    backgroundColor: '#E8E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 10,
   },
   sosButtonInner: {
-    backgroundColor: '#FF6B6B',
-    alignItems: 'center',
+    width: buttonSize * 0.8,
+    height: buttonSize * 0.8,
+    borderRadius: (buttonSize * 0.8) / 2,
+    backgroundColor: '#ff6b6b',
     justifyContent: 'center',
-    // Dark shadow (bottom-right) - depth
-    shadowColor: '#CC0000',
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
-    borderWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  sosButtonContent: {
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
   },
-  sosButtonText: {
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 6,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.4)',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 6,
-  },
-  sosButtonSubtext: {
-    fontWeight: '700',
-    color: '#FFFFFF',
+  sosText: {
+    fontSize: buttonSize * 0.24,
+    fontWeight: 'bold',
+    color: '#fff',
     letterSpacing: 2,
-    textAlign: 'center',
-    marginTop: 2,
-    opacity: 0.95,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  },
+  sosSubtext: {
+    fontSize: buttonSize * 0.06,
+    color: '#fff',
+    opacity: 0.9,
+    marginTop: 4,
   },
 });
 

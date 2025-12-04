@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Clean Java Workspace",
+      "type": "shell",
+      "command": "echo 'Run: Java: Clean Java Language Server Workspace from Command Palette'",
+      "problemMatcher": []
+    }
+  ]
+}
+
+
