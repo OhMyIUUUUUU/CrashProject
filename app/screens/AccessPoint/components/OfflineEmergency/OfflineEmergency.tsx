@@ -2,11 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../../../contexts/AuthContext';
-import { StorageService } from '../../../../../utils/storage';
+import { Alert, Animated, Dimensions, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { reverseGeocode } from '../../../../../utils/geocoding';
+import { StorageService } from '../../../../../utils/storage';
+import { useAuth } from '../../../../contexts/AuthContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 const buttonSize = Math.min(screenWidth * 0.5, 200);
@@ -175,79 +176,159 @@ const OfflineEmergency: React.FC = () => {
                 }
               }
               
-              // Get user profile information
-              const userName = userProfile 
-                ? `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim() || 'User'
+              // Fetch ALL user profile data from local storage (offline mode)
+              const firstName = userProfile?.firstName || '';
+              const lastName = userProfile?.lastName || '';
+              const userName = firstName || lastName 
+                ? `${firstName} ${lastName}`.trim() 
                 : 'User';
               const userPhone = userProfile?.phone || 'N/A';
               const userEmail = userProfile?.email || 'N/A';
-              const emergencyContact = userProfile?.emergency_contact_name 
-                ? `${userProfile.emergency_contact_name} (${userProfile.emergency_contact_number || 'N/A'})`
+              const userGender = userProfile?.gender || 'N/A';
+              const userBirthdate = userProfile?.birthdate || 'N/A';
+              const userRegion = userProfile?.region || 'N/A';
+              const userCity = userProfile?.city || 'N/A';
+              const userBarangay = userProfile?.barangay || 'N/A';
+              const emergencyContactName = userProfile?.emergencyContactName || 'N/A';
+              const emergencyContactNumber = userProfile?.emergencyContactNumber || 'N/A';
+              const emergencyContact = emergencyContactName !== 'N/A' && emergencyContactNumber !== 'N/A'
+                ? `${emergencyContactName} (${emergencyContactNumber})`
                 : 'N/A';
 
-              // Get GPS location
+              // Get CURRENT GPS location (offline mode - ACCURATE with reasonable timeout)
               let latitude: number | null = null;
               let longitude: number | null = null;
-              let locationCity: string | null = null;
-              let locationBarangay: string | null = null;
+              let locationString = 'Location unavailable';
+              let gpsAddress = 'GPS address unavailable';
 
+              // Build profile address first (fast, no waiting) - without region
+              const addressParts = [];
+              if (userBarangay && userBarangay !== 'N/A') addressParts.push(userBarangay);
+              if (userCity && userCity !== 'N/A') addressParts.push(userCity);
+              const profileAddress = addressParts.length > 0 ? addressParts.join(', ') : null;
+
+              // Try GPS with 2s timeout - balance between speed and getting coordinates
+              // For emergency, we need coordinates even if it takes a bit longer
               try {
-                const { status } = await Location.requestForegroundPermissionsAsync();
+                const { status } = await Location.getForegroundPermissionsAsync();
                 if (status === 'granted') {
-                  const currentLocation = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.High,
-                  });
-                  latitude = currentLocation.coords.latitude;
-                  longitude = currentLocation.coords.longitude;
+                  // Try to get GPS with 2s timeout to ensure we capture coordinates
+                  try {
+                    const locationPromise = Location.getCurrentPositionAsync({
+                      accuracy: Location.Accuracy.Balanced, // Fastest option
+                    });
+                    
+                    // 2 second timeout - gives GPS time to get coordinates
+                    const timeoutPromise = new Promise((_, reject) => 
+                      setTimeout(() => reject(new Error('Location timeout')), 2000)
+                    );
 
-                  // Try to reverse geocode to get city and barangay
-                  // In offline mode, this will likely fail, so we catch and continue
+                    const currentLocation = await Promise.race([locationPromise, timeoutPromise]) as any;
+                    // Ensure we capture coordinates if location is available
+                    if (currentLocation?.coords) {
+                      latitude = currentLocation.coords.latitude || null;
+                      longitude = currentLocation.coords.longitude || null;
+                    }
+
                   if (latitude && longitude) {
-                    try {
-                      const geocodeResult = await reverseGeocode(latitude, longitude);
-                      locationCity = geocodeResult.city || null;
-                      locationBarangay = geocodeResult.barangay || null;
-                    } catch (geocodeError: any) {
-                      // In offline mode, geocoding will fail - that's expected
-                      // We'll use GPS coordinates only
-                      const errorMsg = geocodeError?.message || String(geocodeError) || '';
-                      if (!errorMsg.toLowerCase().includes('network')) {
-                        // Only log non-network errors (network errors are expected in offline mode)
-                        console.warn('Geocoding failed (expected in offline mode):', errorMsg);
+                      // Skip geocoding in offline mode - it will fail and cause network errors
+                      // Just use coordinates directly
+                      if (isConnected) {
+                        // Only try geocoding if we have internet connection
+                        try {
+                          const geocodeResult = await reverseGeocode(latitude, longitude);
+                        
+                        // Build address from geocoded result (current GPS location)
+                        const currentAddressParts = [];
+                        // Only use barangay if it doesn't look like a subdivision
+                        if (geocodeResult.barangay && 
+                            !geocodeResult.barangay.toLowerCase().includes('hills') &&
+                            !geocodeResult.barangay.toLowerCase().includes('addition') &&
+                            !geocodeResult.barangay.toLowerCase().includes('subdivision') &&
+                            !geocodeResult.barangay.toLowerCase().includes('subd')) {
+                          currentAddressParts.push(geocodeResult.barangay);
+                        }
+                        // Always use city from GPS location (current location)
+                        if (geocodeResult.city) {
+                          currentAddressParts.push(geocodeResult.city);
+                        }
+                        
+                        const currentAddress = currentAddressParts.length > 0 
+                          ? currentAddressParts.join(', ')
+                          : null;
+                        
+                        // Always use GPS location address (current location)
+                        if (currentAddress) {
+                          gpsAddress = currentAddress;
+                          locationString = currentAddress;
+                        } else {
+                          // If geocoding returns no address, fallback to coordinates
+                          gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                          locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        }
+                        } catch (geocodeError: any) {
+                          // If geocoding fails (offline/network error), use GPS coordinates
+                          // Silently handle network errors (expected in offline mode)
+                          gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                          locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        }
+                      } else {
+                        // Offline mode - use GPS coordinates directly, no geocoding
+                        gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                      }
+                    } else {
+                      locationString = profileAddress || 'Location unavailable';
+                      gpsAddress = profileAddress || 'GPS address unavailable';
+                    }
+                  } catch (locationError: any) {
+                    // GPS timeout or error - try to get last known location as fallback
+                    if (!latitude || !longitude) {
+                      try {
+                        const lastLocation = await Location.getLastKnownPositionAsync();
+                        if (lastLocation?.coords) {
+                          latitude = lastLocation.coords.latitude || null;
+                          longitude = lastLocation.coords.longitude || null;
+                        }
+                      } catch (lastLocationError) {
+                        // Last known location also failed - use profile address
+                        locationString = profileAddress || 'Location unavailable - GPS timeout';
+                        gpsAddress = profileAddress || 'GPS address unavailable';
                       }
                     }
                   }
+                } else {
+                  // Permission not granted - use profile address
+                  locationString = profileAddress || 'Location permission not granted';
+                  gpsAddress = profileAddress || 'GPS address unavailable';
                 }
-              } catch (locationError) {
-                // Location permission denied or GPS unavailable - continue without location
-                console.warn('Location unavailable:', locationError);
+              } catch (locationError: any) {
+                // Any error - use profile address immediately
+                locationString = profileAddress || 'Location unavailable';
+                gpsAddress = profileAddress || 'GPS address unavailable';
               }
 
-              // Build location string
-              const locationParts = [];
-              if (locationBarangay) locationParts.push(locationBarangay);
-              if (locationCity) locationParts.push(locationCity);
-              const locationString = locationParts.length > 0 
-                ? locationParts.join(', ')
-                : 'Location unavailable';
-
-              // Build GPS coordinates string
-              const gpsString = latitude && longitude
-                ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-                : 'GPS coordinates unavailable';
-
-              // Create predefined emergency message
+              // Create predefined emergency message with ALL profile data from local storage
               const emergencyMessage = `EMERGENCY SOS ALERT
 
-Reporter: ${userName}
+PERSONAL INFORMATION:
+Name: ${userName}
 Phone: ${userPhone}
 Email: ${userEmail}
-Emergency Contact: ${emergencyContact}
+Gender: ${userGender}
+Birthdate: ${userBirthdate}
 
-Location: ${locationString}
-GPS Coordinates: ${gpsString}
-Latitude: ${latitude?.toFixed(6) || 'N/A'}
-Longitude: ${longitude?.toFixed(6) || 'N/A'}
+ADDRESS (from profile):
+City: ${userCity}
+Barangay: ${userBarangay}
+
+EMERGENCY CONTACT:
+Name: ${emergencyContactName}
+Phone: ${emergencyContactNumber}
+
+CURRENT LOCATION:
+Latitude: ${latitude?.toFixed(8) || 'N/A'}
+Longitude: ${longitude?.toFixed(8) || 'N/A'}
 
 Time: ${new Date().toLocaleString()}
 
@@ -273,7 +354,8 @@ I need immediate assistance. Please help.`;
 
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar style="dark" />
       <View style={styles.header}>
         <View style={styles.offlineIndicator}>
           <Ionicons name="cloud-offline" size={24} color="#ff3b30" />
@@ -349,7 +431,176 @@ I need immediate assistance. Please help.`;
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.personalActionButton, styles.smsActionButton]}
-                  onPress={() => handleSMS(user.emergencyContactNumber, 'I need help!')}
+                  onPress={async () => {
+                    try {
+                      // Fetch ALL user profile data from local storage (offline mode)
+                      let userProfile = user;
+                      if (!userProfile) {
+                        const localUser = await StorageService.getUserSession();
+                        if (localUser) {
+                          userProfile = localUser;
+                        }
+                      }
+                      
+                      // Get ALL profile data from local storage
+                      const firstName = userProfile?.firstName || '';
+                      const lastName = userProfile?.lastName || '';
+                      const userName = firstName || lastName 
+                        ? `${firstName} ${lastName}`.trim() 
+                        : 'User';
+                      const userPhone = userProfile?.phone || 'N/A';
+                      const userEmail = userProfile?.email || 'N/A';
+                      const userGender = userProfile?.gender || 'N/A';
+                      const userBirthdate = userProfile?.birthdate || 'N/A';
+                      const userRegion = userProfile?.region || 'N/A';
+                      const userCity = userProfile?.city || 'N/A';
+                      const userBarangay = userProfile?.barangay || 'N/A';
+                      const emergencyContactName = userProfile?.emergencyContactName || 'N/A';
+                      const emergencyContactNumber = userProfile?.emergencyContactNumber || 'N/A';
+                      
+                      // Get CURRENT GPS location (ACCURATE with reasonable timeout)
+                      let locationString = 'Location unavailable';
+                      let gpsAddress = 'GPS address unavailable';
+                      let latitude: number | null = null;
+                      let longitude: number | null = null;
+                      
+                      // Build profile address first (fast, no waiting) - without region
+                      const addressParts = [];
+                      if (userBarangay && userBarangay !== 'N/A') addressParts.push(userBarangay);
+                      if (userCity && userCity !== 'N/A') addressParts.push(userCity);
+                      const profileAddress = addressParts.length > 0 ? addressParts.join(', ') : null;
+                      
+                      try {
+                        const { status } = await Location.getForegroundPermissionsAsync();
+                        if (status === 'granted') {
+                          // Try to get GPS with 2s timeout to ensure we capture coordinates
+                          try {
+                            const locationPromise = Location.getCurrentPositionAsync({
+                              accuracy: Location.Accuracy.Balanced, // Fastest option
+                            });
+                            
+                            // 2 second timeout - gives GPS time to get coordinates
+                            const timeoutPromise = new Promise((_, reject) => 
+                              setTimeout(() => reject(new Error('Location timeout')), 2000)
+                            );
+
+                            const currentLocation = await Promise.race([locationPromise, timeoutPromise]) as any;
+                            // Ensure we capture coordinates if location is available
+                            if (currentLocation?.coords) {
+                              latitude = currentLocation.coords.latitude || null;
+                              longitude = currentLocation.coords.longitude || null;
+                            }
+                            
+                            if (latitude && longitude) {
+                              // Skip geocoding in offline mode - it will fail and cause network errors
+                              // Just use coordinates directly
+                              if (isConnected) {
+                                // Only try geocoding if we have internet connection
+                                try {
+                                  const geocodeResult = await reverseGeocode(latitude, longitude);
+                                
+                                // Build address from geocoded result (current GPS location)
+                                const currentAddressParts = [];
+                                // Only use barangay if it doesn't look like a subdivision
+                                if (geocodeResult.barangay && 
+                                    !geocodeResult.barangay.toLowerCase().includes('hills') &&
+                                    !geocodeResult.barangay.toLowerCase().includes('addition') &&
+                                    !geocodeResult.barangay.toLowerCase().includes('subdivision') &&
+                                    !geocodeResult.barangay.toLowerCase().includes('subd')) {
+                                  currentAddressParts.push(geocodeResult.barangay);
+                                }
+                                // Always use city from GPS location (current location)
+                                if (geocodeResult.city) {
+                                  currentAddressParts.push(geocodeResult.city);
+                                }
+                                const currentAddress = currentAddressParts.length > 0 
+                                  ? currentAddressParts.join(', ')
+                                  : null;
+                                
+                                // Always use GPS location address (current location)
+                                if (currentAddress) {
+                                  gpsAddress = currentAddress;
+                                  locationString = currentAddress;
+                                } else {
+                                  // If geocoding returns no address, fallback to coordinates
+                                  gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                                  locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                                }
+                                } catch (geocodeError: any) {
+                                  // If geocoding fails (offline/network error), use GPS coordinates
+                                  // Silently handle network errors (expected in offline mode)
+                                  gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                                  locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                                }
+                              } else {
+                                // Offline mode - use GPS coordinates directly, no geocoding
+                                gpsAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                                locationString = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                              }
+                            } else {
+                              locationString = profileAddress || 'Location unavailable';
+                              gpsAddress = profileAddress || 'GPS address unavailable';
+                            }
+                          } catch (locationError: any) {
+                            // GPS timeout or error - try to get last known location as fallback
+                            if (!latitude || !longitude) {
+                              try {
+                                const lastLocation = await Location.getLastKnownPositionAsync();
+                                if (lastLocation?.coords) {
+                                  latitude = lastLocation.coords.latitude || null;
+                                  longitude = lastLocation.coords.longitude || null;
+                                }
+                              } catch (lastLocationError) {
+                                // Last known location also failed - use profile address
+                                locationString = profileAddress || 'Location unavailable - GPS timeout';
+                                gpsAddress = profileAddress || 'GPS address unavailable';
+                              }
+                            }
+                          }
+                        } else {
+                          // Permission denied - use profile address
+                          locationString = profileAddress || 'Location permission not granted';
+                          gpsAddress = profileAddress || 'GPS address unavailable';
+                        }
+                      } catch (locationError: any) {
+                        // Any error - use profile address immediately
+                        locationString = profileAddress || 'Location unavailable';
+                        gpsAddress = profileAddress || 'GPS address unavailable';
+                      }
+                      
+                      // Predefined emergency message with ALL profile data from local storage
+                      const predefinedMessage = `EMERGENCY - I need help!
+
+PERSONAL INFORMATION:
+Name: ${userName}
+Phone: ${userPhone}
+Email: ${userEmail}
+Gender: ${userGender}
+Birthdate: ${userBirthdate}
+
+ADDRESS (from profile):
+City: ${userCity}
+Barangay: ${userBarangay}
+
+EMERGENCY CONTACT:
+Name: ${emergencyContactName}
+Phone: ${emergencyContactNumber}
+
+CURRENT LOCATION:
+Latitude: ${latitude?.toFixed(8) || 'N/A'}
+Longitude: ${longitude?.toFixed(8) || 'N/A'}
+
+Time: ${new Date().toLocaleString()}
+
+Please help me immediately!`;
+                      
+                      handleSMS(user.emergencyContactNumber, predefinedMessage);
+                    } catch (error) {
+                      console.error('Error preparing message:', error);
+                      // Fallback to simple message
+                      handleSMS(user.emergencyContactNumber, 'I need help!');
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Ionicons name="chatbubble" size={20} color="#fff" />
@@ -389,7 +640,7 @@ I need immediate assistance. Please help.`;
         )}
       </ScrollView>
 
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -397,6 +648,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    paddingTop: Platform.OS === 'ios' ? 50 : 40,
   },
   content: {
     flex: 1,
@@ -628,3 +880,5 @@ const styles = StyleSheet.create({
 });
 
 export default OfflineEmergency;
+
+

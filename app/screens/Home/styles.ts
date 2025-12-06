@@ -80,6 +80,95 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#34C759',
   },
+  // Active Case Banner
+  activeCaseBanner: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  activeCaseBannerBlur: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 107, 107, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  activeCaseBannerContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    padding: 16,
+  },
+  activeCaseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  activeCaseIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  activeCaseHeaderText: {
+    flex: 1,
+  },
+  activeCaseTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
+  activeCaseStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeCaseStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgePending: {
+    backgroundColor: '#FFA500',
+  },
+  statusBadgeResponding: {
+    backgroundColor: '#007AFF',
+  },
+  activeCaseStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  activeCaseDetails: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  activeCaseDetailRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    alignItems: 'flex-start',
+  },
+  activeCaseDetailLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    minWidth: 100,
+    marginRight: 8,
+  },
+  activeCaseDetailValue: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1a1a1a',
+    flex: 1,
+  },
 
   // Welcome Card - Neumorphism (Dual Shadows)
   welcomeCard: {

@@ -4,11 +4,11 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
+import { reverseGeocode } from '../../../utils/geocoding';
 import { useAuth } from '../../contexts/AuthContext';
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
-import { reverseGeocode } from '../../../utils/geocoding';
+import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
@@ -81,14 +81,21 @@ const Home: React.FC = () => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Load user data if not already loaded
+    // Load user data if not already loaded (with error handling)
     const loadUserData = async () => {
+      try {
       if (!user) {
         await loadUser();
         // Wait a moment for state to update
         await new Promise(resolve => setTimeout(resolve, 200));
       }
+        // Even if user is not loaded, continue (might be network issue)
       setIsLoading(false);
+      } catch (error) {
+        console.warn('Error loading user data, continuing anyway:', error);
+        // Continue even if there's an error - user might be logged in locally
+        setIsLoading(false);
+      }
     };
     
     loadUserData();
@@ -204,7 +211,7 @@ const Home: React.FC = () => {
     setSendingSOS(true);
 
     try {
-      // 1. Fetch User ID from Supabase session
+      // 1. Fetch User ID from Supabase session (from database)
       const { data: { session } } = await supabase.auth.getSession();
       const authUserId = session?.user?.id || null;
       const userEmail = session?.user?.email || null;
@@ -219,7 +226,6 @@ const Home: React.FC = () => {
       // 2. Fetch User Info from database (try by user_id first, then by email)
       let userInfo = null;
       let reporterId = null;
-      let userError = null;
 
       // Try to get user by user_id (matching Supabase auth user ID)
       if (authUserId) {
@@ -246,14 +252,12 @@ const Home: React.FC = () => {
         if (data && !error) {
           userInfo = data;
           reporterId = data.user_id;
-        } else {
-          userError = error;
         }
       }
 
       if (!userInfo || !reporterId) {
-        console.error('Error fetching user info:', userError);
-        Alert.alert('Error', 'Unable to fetch user information. Please try again.');
+        console.error('Error fetching user info from database');
+        Alert.alert('Error', 'Unable to fetch user information from database. Please try again.');
         setSendingSOS(false);
         setSosCountdown(0);
         return;
@@ -496,7 +500,7 @@ const Home: React.FC = () => {
 
     console.log('🔴 SOS Button Clicked!');
     
-    // Check database directly for active case (don't rely on state)
+    // Check database directly for active case (fetch from database only)
     const { data: { session } } = await supabase.auth.getSession();
     const authUserId = session?.user?.id || null;
     const userEmail = session?.user?.email || null;
@@ -572,7 +576,12 @@ const Home: React.FC = () => {
             text: '💬 Open Chat', 
             onPress: () => {
               console.log('Opening chat');
-              setChatModalVisible(true);
+              if (activeCase) {
+                router.push({
+                  pathname: '/screens/Home/ChatScreen',
+                  params: { report_id: activeCase.report_id },
+                });
+              }
             }
           },
           { 

@@ -1,5 +1,6 @@
 import React, { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { StorageService, UserData } from '../../utils/storage';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   user: UserData | null;
@@ -19,16 +20,91 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadUser = useCallback(async () => {
     try {
-      const isLoggedIn = await StorageService.isLoggedIn();
-      if (isLoggedIn) {
-        const userData = await StorageService.getUserSession();
-        if (userData) {
-          setUser(userData);
-          setIsAuthenticated(true);
+      // Fetch from Supabase only - no local storage fallback
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Error getting Supabase session:', sessionError);
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+      
+      if (!session?.user) {
+        // No session - user is not logged in
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+      
+      // If Supabase session exists, fetch user data from database
+      const authUserId = session.user.id;
+      const userEmail = session.user.email;
+      
+      let userData = null;
+      
+      // Try to fetch user by user_id first
+      if (authUserId) {
+        const { data, error } = await supabase
+          .from('tbl_users')
+          .select('*')
+          .eq('user_id', authUserId)
+          .single();
+        
+        if (data && !error) {
+          userData = data;
+        } else if (error) {
+          console.error('Error fetching user by user_id:', error);
         }
       }
-    } catch (error) {
-      console.error('Error loading user:', error);
+      
+      // If not found by user_id, try by email
+      if (!userData && userEmail) {
+        const { data, error } = await supabase
+          .from('tbl_users')
+          .select('*')
+          .eq('email', userEmail)
+          .single();
+        
+        if (data && !error) {
+          userData = data;
+        } else if (error) {
+          console.error('Error fetching user by email:', error);
+        }
+      }
+      
+      // If we got user data from database, set it
+      if (userData) {
+        const userDataForStorage: UserData = {
+          email: userData.email || userEmail || '',
+          phone: userData.phone || '',
+          firstName: userData.first_name || '',
+          lastName: userData.last_name || '',
+          gender: userData.sex || '',
+          birthdate: userData.birthdate || '',
+          emergencyContactName: userData.emergency_contact_name || '',
+          emergencyContactNumber: userData.emergency_contact_number || '',
+          region: userData.region || '',
+          city: userData.city || '',
+          barangay: userData.barangay || '',
+          password: '', // Don't store password in session
+        };
+        
+        // Save to local storage for quick access (but always fetch from Supabase first)
+        await StorageService.saveUserSession(userDataForStorage);
+        setUser(userDataForStorage);
+        setIsAuthenticated(true);
+        console.log('✅ User data fetched from Supabase database');
+      } else {
+        // No user data found in database
+        console.error('User not found in database');
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    } catch (error: any) {
+      console.error('Error loading user from Supabase:', error);
+      setUser(null);
+      setIsAuthenticated(false);
     }
   }, []);
 
@@ -66,11 +142,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = useCallback(async () => {
     try {
+      // Sign out from Supabase first (this clears the session)
+      const { error: signOutError } = await supabase.auth.signOut();
+      
+      if (signOutError) {
+        console.error('Error signing out from Supabase:', signOutError);
+      }
+      
+      // Clear local storage
       await StorageService.clearUserSession();
+      
+      // Clear app state
       setUser(null);
       setIsAuthenticated(false);
+      
+      console.log('✅ User logged out successfully');
     } catch (error) {
       console.error('Error during logout:', error);
+      // Even if there's an error, clear local state
+      setUser(null);
+      setIsAuthenticated(false);
     }
   }, []);
 

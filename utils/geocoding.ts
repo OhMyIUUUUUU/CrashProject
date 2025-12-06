@@ -114,67 +114,109 @@ export async function reverseGeocode(
         console.log('📍 Geocoding raw data:', { address, display_name: data.display_name });
       }
       
-      // Strategy 1: Direct address fields (most common)
-      let city = 
-        address.city || 
-        address.town || 
-        address.municipality || 
-        address.city_district ||
-        null;
-
-      // If no city found, try county (sometimes used for cities in PH)
-      if (!city) {
-        city = address.county || null;
-      }
-
-      // Strategy 2: Check display_name for city if address fields don't have it
-      if (!city && data.display_name) {
-        const displayParts = data.display_name.split(',').map(p => p.trim());
-        // In Philippines: "Barangay, City, Province" or "Street, Barangay, City"
-        // City is usually after barangay
-        for (let i = 1; i < Math.min(4, displayParts.length); i++) {
-          const part = displayParts[i];
-          if (part) {
-            // Check if it contains city indicators
-            const hasCityIndicator = part.toLowerCase().includes('city') || 
-                                    part.toLowerCase().includes('municipality');
-            // Or if it's a substantial name (likely city)
-            const isValidCity = part.length > 4 && part.length < 50;
-            
-            if (hasCityIndicator || isValidCity) {
-              // Remove "City" or "Municipality" suffix if present
-              city = part.replace(/\s*(city|municipality)$/i, '').trim();
-              break;
-            }
-          }
-        }
-      }
-
-      // Extract barangay (Philippines specific)
-      // Barangay can be in various fields - try all possible locations
-      let barangay = null;
-      
       // Common subdivision/neighborhood/district names that are NOT barangays (filter these out)
       const subdivisionKeywords = [
         'village', 'subdivision', 'subd', 'estate', 'heights', 'hills', 
         'park', 'garden', 'residence', 'residential', 'compound', 'phase',
         'hillside', 'valley', 'ridge', 'manor', 'plaza', 'center', 'centre',
-        'district', 'dist', 'district', 'zone', 'area', 'sector', 'block'
+        'district', 'dist', 'district', 'zone', 'area', 'sector', 'block',
+        'addition', 'homes', 'villas', 'townhouse', 'condo', 'condominium',
+        'apartments', 'apartment', 'towers', 'tower', 'complex', 'precinct'
       ];
       
       // Function to check if a name is likely a subdivision/neighborhood/district (not barangay)
+      // MUST be declared before use
       const isSubdivision = (name: string): boolean => {
         const lowerName = name.toLowerCase();
-        // Check for subdivision keywords
-        if (subdivisionKeywords.some(keyword => lowerName.includes(keyword))) {
+        // Check for subdivision keywords (must match whole word or be part of common patterns)
+        if (subdivisionKeywords.some(keyword => {
+          // Match whole word or at start/end of name
+          const regex = new RegExp(`\\b${keyword}\\b|^${keyword}|${keyword}$`, 'i');
+          return regex.test(lowerName);
+        })) {
           return true;
         }
-        // Check if it ends with "District" or "Dist"
-        if (lowerName.match(/\s*(district|dist|zone|area|sector)\s*$/i)) {
+        // Check if it ends with "District", "Dist", "Hills", "Heights", etc.
+        if (lowerName.match(/\s*(district|dist|zone|area|sector|hills|heights|park|garden|village|subdivision|subd)\s*$/i)) {
+          return true;
+        }
+        // Check for common subdivision patterns like "Addition Hills", "Green Valley", etc.
+        if (lowerName.match(/^(addition|green|blue|white|golden|royal|premier|grand|mega|super)\s+/i)) {
+          return true;
+        }
+        // Check if name contains multiple subdivision indicators
+        const subdivisionCount = subdivisionKeywords.filter(kw => lowerName.includes(kw)).length;
+        if (subdivisionCount >= 2) {
           return true;
         }
         return false;
       };
+      
+      // Strategy 1: Direct address fields (most common)
+      let city = 
+        address.city || 
+        address.town || 
+        address.municipality || 
+        null;
+
+      // Clean city name - remove "City of" prefix and "City" suffix
+      if (city) {
+        city = city.replace(/^city\s+of\s+/i, '').replace(/\s+city$/i, '').trim();
+      }
+
+      // If no city found, try county (sometimes used for cities in PH)
+      if (!city) {
+        const county = address.county || null;
+        if (county) {
+          // Only use county if it doesn't look like a subdivision
+          const cleanedCounty = county.replace(/^city\s+of\s+/i, '').replace(/\s+city$/i, '').trim();
+          if (!isSubdivision(cleanedCounty) && cleanedCounty.length > 3) {
+            city = cleanedCounty;
+          }
+        }
+      }
+
+      // Strategy 2: Check display_name for city if address fields don't have it
+      if (!city && data.display_name) {
+        const displayParts = data.display_name.split(',').map((p: string) => p.trim());
+        // In Philippines: "Barangay, City, Province" or "Street, Barangay, City"
+        // City is usually after barangay
+        for (let i = 1; i < Math.min(5, displayParts.length); i++) {
+          const part = displayParts[i];
+          if (part) {
+            // Clean the part
+            let cleanedPart = part.replace(/^city\s+of\s+/i, '').replace(/\s+city$/i, '').trim();
+            
+            // Skip if it's a subdivision
+            if (isSubdivision(cleanedPart)) {
+              continue;
+            }
+            
+            // Check if it contains city indicators
+            const hasCityIndicator = part.toLowerCase().includes('city') || 
+                                    part.toLowerCase().includes('municipality');
+            // Or if it's a substantial name (likely city)
+            const isValidCity = cleanedPart.length > 4 && cleanedPart.length < 50;
+            
+            // Skip common subdivision patterns
+            const isCommonSubdivision = cleanedPart.match(/^(addition|green|blue|white|golden|royal|premier|grand|mega|super)\s+/i);
+            
+            if (!isCommonSubdivision && (hasCityIndicator || isValidCity)) {
+              city = cleanedPart;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Validate city - ensure it's not a subdivision name
+      if (city && isSubdivision(city)) {
+        city = null;
+      }
+
+      // Extract barangay (Philippines specific)
+      // Barangay can be in various fields - try all possible locations
+      let barangay = null;
       
       // Strategy 1: Check common barangay fields (in order of likelihood)
       // But prioritize fields that are more likely to be actual barangays
@@ -211,7 +253,7 @@ export async function reverseGeocode(
 
       // Strategy 2: Parse from display_name (more reliable for Philippines)
       if (!barangay && data.display_name) {
-        const displayParts = data.display_name.split(',').map(p => p.trim());
+        const displayParts = data.display_name.split(',').map((p: string) => p.trim());
         
         // In Philippines, address format is often: "Barangay Name, City, Province, Country"
         // Or: "Street, Barangay, City, Province"

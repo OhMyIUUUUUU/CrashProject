@@ -1,16 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import NetInfo from '@react-native-community/netinfo';
-import * as Location from 'expo-location';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
+import { reverseGeocode } from '../../../utils/geocoding';
 import { useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
-import { reverseGeocode } from '../../../utils/geocoding';
 import { ChatBox } from '../AccessPoint/components/ChatBox';
+import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
 import { styles } from './styles';
@@ -27,13 +27,13 @@ type RoleType = 'victim' | 'witness' | null;
 
 // Predefined description text for each category
 const categoryDescriptions: Record<string, string> = {
-  'Violence': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Threat': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Theft': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Vandalism': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Suspicious': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Emergency': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
-  'Other': 'Please provide details about the incident:\n\n- What happened?\n- When did this occur?\n- Where is the location?\n- Who is involved?\n- Any additional information?',
+  'Violence': 'VIOLENCE INCIDENT REPORT\n\nPlease provide the following details:\n\n- Type of violence (physical, verbal, domestic, etc.)\n- What happened? (Detailed description of the incident)\n- Any witnesses present?\n- Any injuries sustained?\n- Current status of the situation\n\nPlease provide as much detail as possible to help us respond appropriately.',
+  'Threat': 'THREAT INCIDENT REPORT\n\nPlease provide the following details:\n\n- Type of threat (verbal, written, online, physical, etc.)\n- What was the threat? (Exact words or actions)\n- How was the threat delivered? (In person, phone, message, etc.)\n- Any witnesses present?\n- Do you feel your safety is at risk?\n- Any additional information?\n\nPlease provide as much detail as possible to help us assess the situation.',
+  'Theft': 'THEFT INCIDENT REPORT\n\nPlease provide the following details:\n\n- What was stolen? (Item description and value)\n- How was the theft committed? (Breaking in, pickpocketing, etc.)\n- Any witnesses present?\n- Was the location secured? (Locked doors, windows, etc.)\n- Any security cameras in the area?\n- Estimated value of stolen items\n- Any additional information?\n\nPlease provide as much detail as possible to help us investigate.',
+  'Vandalism': 'VANDALISM INCIDENT REPORT\n\nPlease provide the following details:\n\n- What was vandalized? (Property, vehicle, public property, etc.)\n- Type of damage (graffiti, broken windows, damaged property, etc.)\n- Any witnesses present?\n- Estimated cost of damage\n- Was this reported to property owner?\n- Any security cameras in the area?\n- Any additional information?\n\nPlease provide as much detail as possible to help us investigate.',
+  'Suspicious': 'SUSPICIOUS ACTIVITY REPORT\n\nPlease provide the following details:\n\n- What suspicious activity did you observe?\n- Description of vehicle(s) involved (if applicable)\n- What made this activity suspicious?\n- How long did the activity last?\n- Any witnesses present?\n- Any photos or videos taken?\n- Any additional information?\n\nPlease provide as much detail as possible to help us investigate.',
+  'Emergency': 'EMERGENCY INCIDENT REPORT\n\nPlease provide the following details:\n\n- Type of emergency (medical, fire, accident, etc.)\n- What is the current situation?\n- Is anyone injured? (Number of people and severity)\n- Is the situation ongoing or resolved?\n- Are emergency services already on scene?\n- Any immediate danger present?\n- Any additional information?\n\nPlease provide as much detail as possible. If this is a life-threatening emergency, please call 911 immediately.',
+  'Other': 'INCIDENT REPORT\n\nPlease provide the following details:\n\n- What happened? (Detailed description of the incident)\n- Any witnesses present?\n- Any injuries or damages?\n- Current status of the situation\n- Any additional information?\n\nPlease provide as much detail as possible to help us respond appropriately.',
 };
 
 const Report: React.FC = () => {
@@ -47,6 +47,8 @@ const Report: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [locationText, setLocationText] = useState<string>('');
+  const [locationLoading, setLocationLoading] = useState(false);
 
   // Monitor network connectivity - redirect to offline mode if connection is lost
   useEffect(() => {
@@ -60,22 +62,221 @@ const Report: React.FC = () => {
     return () => unsubscribe();
   }, [router]);
 
+  // Fetch user location when component loads
+  useEffect(() => {
+    const fetchLocation = async () => {
+      if (activeCase) {
+        // If there's an active case, don't fetch location (form is read-only)
+        return;
+      }
+
+      setLocationLoading(true);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          try {
+            const currentLocation = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+            });
+            const latitude = currentLocation.coords.latitude;
+            const longitude = currentLocation.coords.longitude;
+            
+            // Reverse geocode to get full address
+            if (latitude && longitude) {
+              try {
+                // Fetch full address from Nominatim API directly to get complete display_name
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&namedetails=1&accept-language=en,fil&extratags=1`;
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                const response = await fetch(url, {
+                  headers: {
+                    'User-Agent': 'AccessPoint-Mobile-App/1.0',
+                    'Accept': 'application/json',
+                  },
+                  signal: controller.signal,
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                  const data = await response.json();
+                  // Use display_name for full address, fallback to geocodeResult
+                  if (data?.display_name) {
+                    setLocationText(data.display_name);
+                  } else {
+                    // Fallback to geocodeResult if display_name not available
+                    const geocodeResult = await reverseGeocode(latitude, longitude);
+                    const locationParts = [];
+                    if (geocodeResult.barangay) locationParts.push(geocodeResult.barangay);
+                    if (geocodeResult.city) locationParts.push(geocodeResult.city);
+                    if (geocodeResult.region) locationParts.push(geocodeResult.region);
+                    const locationAddress = locationParts.length > 0 
+                      ? locationParts.join(', ')
+                      : `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                    setLocationText(locationAddress);
+                  }
+                } else {
+                  // Fallback to geocodeResult if API call fails
+                  const geocodeResult = await reverseGeocode(latitude, longitude);
+                  const locationParts = [];
+                  if (geocodeResult.barangay) locationParts.push(geocodeResult.barangay);
+                  if (geocodeResult.city) locationParts.push(geocodeResult.city);
+                  if (geocodeResult.region) locationParts.push(geocodeResult.region);
+                  const locationAddress = locationParts.length > 0 
+                    ? locationParts.join(', ')
+                    : `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                  setLocationText(locationAddress);
+                }
+              } catch (geocodeError) {
+                // Fallback to GPS coordinates if geocoding fails
+                setLocationText(`GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+              }
+            }
+          } catch (locationError: any) {
+            // Location unavailable - use profile address as fallback
+            console.warn('GPS location unavailable, using profile address:', locationError?.message);
+            
+            // Try to get user profile address from Supabase
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.user) {
+                const { data: userData } = await supabase
+                  .from('tbl_users')
+                  .select('barangay, city, region')
+                  .eq('user_id', session.user.id)
+                  .single();
+                
+                if (userData) {
+                  const addressParts = [];
+                  if (userData.barangay) addressParts.push(userData.barangay);
+                  if (userData.city) addressParts.push(userData.city);
+                  if (userData.region) addressParts.push(userData.region);
+                  if (addressParts.length > 0) {
+                    setLocationText(`${addressParts.join(', ')} (from profile)`);
+                  } else {
+                    setLocationText('Location unavailable - Please enable location services in device settings');
+                  }
+                } else {
+                  setLocationText('Location unavailable - Please enable location services in device settings');
+                }
+              } else {
+                setLocationText('Location unavailable - Please enable location services in device settings');
+              }
+            } catch (dbError) {
+              setLocationText('Location unavailable - Please enable location services in device settings');
+            }
+          }
+        } else {
+          // Permission denied - use profile address as fallback
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+              const { data: userData } = await supabase
+                .from('tbl_users')
+                .select('barangay, city, region')
+                .eq('user_id', session.user.id)
+                .single();
+              
+              if (userData) {
+                const addressParts = [];
+                if (userData.barangay) addressParts.push(userData.barangay);
+                if (userData.city) addressParts.push(userData.city);
+                if (userData.region) addressParts.push(userData.region);
+                if (addressParts.length > 0) {
+                  setLocationText(`${addressParts.join(', ')} (from profile - location permission not granted)`);
+                } else {
+                  setLocationText('Location permission not granted - Please enable in device settings');
+                }
+              } else {
+                setLocationText('Location permission not granted - Please enable in device settings');
+              }
+            } else {
+              setLocationText('Location permission not granted - Please enable in device settings');
+            }
+          } catch (dbError) {
+            setLocationText('Location permission not granted - Please enable in device settings');
+          }
+        }
+      } catch (error: any) {
+        console.error('Error fetching location:', error);
+        // Final fallback - try to use profile address
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { data: userData } = await supabase
+              .from('tbl_users')
+              .select('barangay, city, region')
+              .eq('user_id', session.user.id)
+              .single();
+            
+            if (userData) {
+              const addressParts = [];
+              if (userData.barangay) addressParts.push(userData.barangay);
+              if (userData.city) addressParts.push(userData.city);
+              if (userData.region) addressParts.push(userData.region);
+              if (addressParts.length > 0) {
+                setLocationText(`${addressParts.join(', ')} (from profile)`);
+              } else {
+                setLocationText('Unable to fetch location - Please check device settings');
+              }
+            } else {
+              setLocationText('Unable to fetch location - Please check device settings');
+            }
+          } else {
+            setLocationText('Unable to fetch location - Please check device settings');
+          }
+        } catch (dbError) {
+          setLocationText('Unable to fetch location - Please check device settings');
+        }
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+    fetchLocation();
+  }, [activeCase]);
+
   // Load active case data into form when active case exists
   useEffect(() => {
-    if (activeCase) {
-      setDescription(activeCase.description || '');
-      setSelectedCategory(activeCase.category || null);
-      // Extract role from remarks if available, otherwise default to 'witness'
-      const roleMatch = activeCase.remarks?.match(/Role:\s*(\w+)/i);
-      setRole(roleMatch ? (roleMatch[1].toLowerCase() as RoleType) : 'witness');
-    } else {
-      // Reset form when no active case (case resolved/closed or cancelled)
-      // This allows users to create a new report
-      setDescription('');
-      setSelectedCategory(null);
-      setRole('victim');
-      setAttachments([]);
-    }
+    const loadActiveCaseData = async () => {
+      if (activeCase) {
+        setDescription(activeCase.description || '');
+        setSelectedCategory(activeCase.category || null);
+        // Extract role from remarks if available, otherwise default to 'witness'
+        const roleMatch = activeCase.remarks?.match(/Role:\s*(\w+)/i);
+        setRole(roleMatch ? (roleMatch[1].toLowerCase() as RoleType) : 'witness');
+        // Set location from active case coordinates
+        if (activeCase.latitude && activeCase.longitude) {
+          // Try to get full address from coordinates
+          try {
+            const geocodeResult = await reverseGeocode(activeCase.latitude, activeCase.longitude);
+            const locationParts = [];
+            if (geocodeResult.barangay) locationParts.push(geocodeResult.barangay);
+            if (geocodeResult.city) locationParts.push(geocodeResult.city);
+            if (geocodeResult.region) locationParts.push(geocodeResult.region);
+            if (locationParts.length > 0) {
+              setLocationText(locationParts.join(', '));
+            } else {
+              setLocationText(`GPS: ${activeCase.latitude.toFixed(6)}, ${activeCase.longitude.toFixed(6)}`);
+            }
+          } catch (error) {
+            setLocationText(`GPS: ${activeCase.latitude.toFixed(6)}, ${activeCase.longitude.toFixed(6)}`);
+          }
+        }
+      } else {
+        // Reset form when no active case (case resolved/closed or cancelled)
+        // This allows users to create a new report
+        setDescription('');
+        setSelectedCategory(null);
+        setRole('victim');
+        setAttachments([]);
+        // Location will be fetched again by the location useEffect
+      }
+    };
+
+    loadActiveCaseData();
   }, [activeCase]);
 
 
@@ -392,6 +593,7 @@ const Report: React.FC = () => {
                       setDescription('');
                       setRole('victim');
                       setAttachments([]);
+                      setLocationText('');
                     } else {
                       Alert.alert('Error', 'Failed to cancel report. Please try again.');
                     }
@@ -701,9 +903,8 @@ const Report: React.FC = () => {
                   if (!activeCase) {
                     console.log(`Selected category: ${label} (index: ${index})`);
                     setSelectedCategory(label);
-                    // Set predefined description text for the selected category
-                    const predefinedText = categoryDescriptions[label] || categoryDescriptions['Other'];
-                    setDescription(predefinedText);
+                    // Clear description when category changes - placeholder will show predefined text
+                    setDescription('');
                   }
                 }}
               />
@@ -716,7 +917,7 @@ const Report: React.FC = () => {
             <View style={styles.descriptionContainer}>
               <TextInput
                 style={[styles.descriptionInput, activeCase && styles.readOnlyInput]}
-                placeholder="What is happening? Who is involved? Where exactly are you/it located?"
+                placeholder={selectedCategory ? (categoryDescriptions[selectedCategory] || categoryDescriptions['Other']) : ''}
                 placeholderTextColor="#999"
                 multiline
                 numberOfLines={8}
@@ -791,6 +992,26 @@ const Report: React.FC = () => {
                   </View>
                 )}
               </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Location */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Location</Text>
+            <View style={styles.locationContainer}>
+              {locationLoading && (
+                <View style={styles.locationLoading}>
+                  <Text style={styles.locationLoadingText}>Loading...</Text>
+                </View>
+              )}
+              <TextInput
+                style={[styles.locationInput, activeCase && styles.readOnlyInput]}
+                placeholder="Your location will appear here"
+                placeholderTextColor="#999"
+                value={locationText}
+                editable={false}
+                multiline
+              />
             </View>
           </View>
 
@@ -873,8 +1094,8 @@ const Report: React.FC = () => {
           )}
         </ScrollView>
 
-        {/* ChatBox Component */}
-        <ChatBox onSendMessage={handleSendMessage} />
+        {/* ChatBox Component - Only show when active case exists */}
+        {activeCase && <ChatBox onSendMessage={handleSendMessage} />}
 
         {/* Bottom Navigation */}
         <CustomTabBar />

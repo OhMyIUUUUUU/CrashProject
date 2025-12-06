@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
-import { Platform } from 'react-native'
+import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 const supabaseUrl = 'https://phawtlidroatfpzboxhi.supabase.co'
 const supabasePublishableKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoYXd0bGlkcm9hdGZwemJveGhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMTAzNDcsImV4cCI6MjA3ODg4NjM0N30.DXnEZatmlNLBh2YVnKGMyw4s5r34lhkFWioZupRQNAQ'
@@ -11,8 +11,11 @@ const createStorageAdapter = () => {
   let loadAttempted = false;
 
   const loadAsyncStorage = () => {
-    if (loadAttempted) {
+    if (loadAttempted && AsyncStorage) {
       return AsyncStorage;
+    }
+    if (loadAttempted) {
+      return null; // Already tried and failed
     }
     loadAttempted = true;
 
@@ -22,24 +25,14 @@ const createStorageAdapter = () => {
     }
 
     // Try to load AsyncStorage using a safe method
-    // We'll use a function that delays the require
     try {
-      // Create a function that will be called later, not during module init
-      const loadModule = () => {
-        try {
-          // @ts-ignore - We're dynamically requiring this
-          const module = require('@react-native-async-storage/async-storage');
-          return module?.default || module;
-        } catch (e) {
-          return null;
-        }
-      };
-
-      // Only call it when storage methods are actually used
-      // For now, we'll set it to the loader function
-      AsyncStorage = loadModule;
+      // @ts-ignore - We're dynamically requiring this
+      const module = require('@react-native-async-storage/async-storage');
+      AsyncStorage = module?.default || module;
       return AsyncStorage;
-    } catch {
+    } catch (e) {
+      console.warn('AsyncStorage not available, session persistence disabled:', e);
+      AsyncStorage = null;
       return null;
     }
   };
@@ -81,16 +74,13 @@ const createStorageAdapter = () => {
   };
 };
 
-// For now, don't use AsyncStorage at all to avoid the initialization error
-// The app can still work, sessions just won't persist across restarts
-// Users can rebuild the app to properly link AsyncStorage
+// Use the storage adapter to enable session persistence across app restarts
+// This allows users to stay logged in even after restarting the app or phone
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
-    // Don't provide storage adapter to avoid AsyncStorage errors
-    // This means sessions won't persist, but the app will work
-    storage: undefined,
+    storage: createStorageAdapter(), // Use AsyncStorage adapter for session persistence
     autoRefreshToken: true,
-    persistSession: false, // Disable session persistence to avoid AsyncStorage issues
+    persistSession: true, // Enable session persistence - users stay logged in across restarts
     detectSessionInUrl: false,
   },
 })

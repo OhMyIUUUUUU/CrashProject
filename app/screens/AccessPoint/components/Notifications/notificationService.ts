@@ -1,10 +1,10 @@
-import { Platform } from 'react-native';
-import notifee, { 
-  EventType, 
-  AndroidImportance,
-  Event,
-  InitialNotification
+import notifee, {
+    AndroidImportance,
+    Event,
+    EventType,
+    InitialNotification
 } from '@notifee/react-native';
+import { Platform } from 'react-native';
 
 /**
  * Check current notification permission status
@@ -105,7 +105,7 @@ export async function initializeNotifications(): Promise<boolean> {
             'You will now receive important notifications from AccessPoint in your notification tray.',
             {
               type: 'welcome',
-              timestamp: Date.now(),
+              timestamp: String(Date.now()),
             }
           );
         } catch (error: any) {
@@ -220,51 +220,58 @@ export async function displayNotification(
       channelId = 'default'; // Fallback to default channel ID
     }
 
-    // Display notification with settings to ensure it shows in tray
-    return await notifee.displayNotification({
-    title,
-    body,
-    data: {
-      ...data,
-      type: data?.type || 'default',
-      timestamp: Date.now(),
-      // Add navigation data to open app when tapped
-      navigation: true,
-    },
-    android: {
-      channelId,
-      importance: AndroidImportance.HIGH,
-      // Notification will stay in tray even after being tapped
-      autoCancel: false, // Don't auto-dismiss when tapped - stays in tray
-      showTimestamp: true, // Show timestamp
-      timestamp: Date.now(),
-      // Make it visible
-      visibility: 1, // Public visibility (shows on lock screen)
-      pressAction: {
-        id: 'default',
-        launchActivity: 'default', // Opens the app when tapped
+    // Display notification with settings to ensure it shows in foreground and is clickable
+    const notificationId = await notifee.displayNotification({
+      title,
+      body,
+      data: {
+        ...data,
+        type: data?.type || 'default',
+        timestamp: String(Date.now()),
+        // Add navigation data to open app when tapped
+        navigation: 'true',
       },
-      // Style for better visibility (BigText for longer messages)
-      style: {
-        type: 1, // BigText style
-        text: body, // The text to display
+      android: {
+        channelId,
+        importance: AndroidImportance.HIGH,
+        // Allow notification to be dismissed when tapped (standard behavior)
+        autoCancel: true, // Auto-dismiss when tapped - this ensures it shows in tray
+        showTimestamp: true, // Show timestamp
+        timestamp: Date.now(),
+        // Make it visible
+        visibility: 1, // Public visibility (shows on lock screen)
+        pressAction: {
+          id: 'default',
+          launchActivity: 'default', // Opens the app when tapped
+        },
+        // Style for better visibility (BigText for longer messages)
+        style: {
+          type: 1, // BigText style
+          text: body, // The text to display
+        },
+        // Wake up device and show notification
+        wakeUp: true,
+        // Show notification even when app is in foreground
+        ongoing: false,
+        // Small icon for notification
+        smallIcon: 'ic_notification',
+        // Ensure notification shows in foreground
+        showWhen: true,
       },
-      // Wake up device and show notification
-      wakeUp: true,
-      // Show notification even when app is in background
-      ongoing: false,
-    },
-    ios: {
-      // iOS specific settings
-      sound: 'default',
-      badge: true,
-      foregroundPresentationOptions: {
-        alert: true,
+      ios: {
+        // iOS specific settings
+        sound: 'default',
         badge: true,
-        sound: true,
+        foregroundPresentationOptions: {
+          alert: true,
+          badge: true,
+          sound: true,
+        },
       },
-    },
-  });
+    });
+
+    console.log('✅ Notification displayed successfully with ID:', notificationId);
+    return notificationId;
   } catch (error: any) {
     // Suppress keep-awake errors
     const errorMsg = error?.message || String(error) || '';

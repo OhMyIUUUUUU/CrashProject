@@ -4,10 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { StorageService } from '../../../utils/storage';
-import { ChatBox } from '../AccessPoint/components/ChatBox';
+import { useAuth } from '../../contexts/AuthContext';
+import { useActiveCase } from '../../hooks/useActiveCase';
+import { supabase } from '../../lib/supabase';
+import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
 import { styles } from './styles';
 
@@ -29,6 +30,7 @@ interface UserProfileData {
 const Profile: React.FC = () => {
   const router = useRouter();
   const { user, logout, loadUser } = useAuth();
+  const { activeCase } = useActiveCase();
   const [profileData, setProfileData] = useState<UserProfileData | null>(null);
   const [editedProfileData, setEditedProfileData] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,57 +103,110 @@ const Profile: React.FC = () => {
 
       // Try to fetch by user_id first (more reliable)
       let userData = null;
-      let error = null;
+      let networkError = false;
 
-      if (authUserId) {
-        const { data, error: userError } = await supabase
-          .from('tbl_users')
-          .select('*')
-          .eq('user_id', authUserId)
-          .single();
-        
-        if (data && !userError) {
-          userData = data;
-          console.log('✅ Found user by user_id');
-        } else {
-          console.log('⚠️ Not found by user_id, trying email...', userError?.message);
-          error = userError;
+      try {
+        if (authUserId) {
+          const { data, error: userError } = await supabase
+            .from('tbl_users')
+            .select('*')
+            .eq('user_id', authUserId)
+            .single();
+          
+          if (data && !userError) {
+            userData = data;
+            console.log('✅ Found user by user_id');
+          } else if (userError) {
+            // Check if it's a network error
+            const errorMsg = userError?.message || String(userError) || '';
+            if (errorMsg.toLowerCase().includes('network') || 
+                errorMsg.toLowerCase().includes('fetch') ||
+                errorMsg.toLowerCase().includes('failed')) {
+              networkError = true;
+              console.warn('⚠️ Network error fetching by user_id, trying email...');
+            } else {
+              console.log('⚠️ Not found by user_id, trying email...', userError?.message);
+            }
+          }
+        }
+
+        // If not found by user_id, try by email
+        if (!userData && userEmail && !networkError) {
+          try {
+            const { data, error: emailError } = await supabase
+              .from('tbl_users')
+              .select('*')
+              .eq('email', userEmail)
+              .single();
+
+            if (data && !emailError) {
+              userData = data;
+              console.log('✅ Found user by email');
+            } else if (emailError) {
+              const errorMsg = emailError?.message || String(emailError) || '';
+              if (errorMsg.toLowerCase().includes('network') || 
+                  errorMsg.toLowerCase().includes('fetch') ||
+                  errorMsg.toLowerCase().includes('failed')) {
+                networkError = true;
+                console.warn('⚠️ Network error fetching by email');
+              } else {
+                console.error('❌ Not found by email either:', emailError?.message);
+              }
+            }
+          } catch (emailFetchError: any) {
+            const errorMsg = emailFetchError?.message || String(emailFetchError) || '';
+            if (errorMsg.toLowerCase().includes('network') || 
+                errorMsg.toLowerCase().includes('fetch') ||
+                errorMsg.toLowerCase().includes('failed')) {
+              networkError = true;
+              console.warn('⚠️ Network error when fetching by email');
+            }
+          }
+        }
+      } catch (fetchError: any) {
+        const errorMsg = fetchError?.message || String(fetchError) || '';
+        if (errorMsg.toLowerCase().includes('network') || 
+            errorMsg.toLowerCase().includes('fetch') ||
+            errorMsg.toLowerCase().includes('failed')) {
+          networkError = true;
+          console.warn('⚠️ Network error when fetching profile');
         }
       }
 
-      // If not found by user_id, try by email
-      if (!userData && userEmail) {
-        const { data, error: emailError } = await supabase
-        .from('tbl_users')
-        .select('*')
-          .eq('email', userEmail)
-        .single();
-
-        if (data && !emailError) {
-          userData = data;
-          console.log('✅ Found user by email');
-        } else {
-          console.error('❌ Not found by email either:', emailError?.message);
-          error = emailError;
+      // If network error, try to use local storage data
+      if (networkError && !userData) {
+        console.log('⚠️ Network error detected, using local storage data');
+        const localUser = user || await StorageService.getUserSession();
+        if (localUser) {
+          // Convert local UserData to UserProfileData format
+          const localProfileData: UserProfileData = {
+            user_id: '',
+            email: localUser.email || '',
+            phone: localUser.phone || '',
+            first_name: localUser.firstName || '',
+            last_name: localUser.lastName || '',
+            sex: localUser.gender || '',
+            birthdate: localUser.birthdate || '',
+            emergency_contact_name: localUser.emergencyContactName || '',
+            emergency_contact_number: localUser.emergencyContactNumber || '',
+            region: localUser.region || '',
+            city: localUser.city || '',
+            barangay: localUser.barangay || '',
+          };
+          setProfileData(localProfileData);
+          setEditedProfileData(localProfileData);
+          console.log('✅ Using local storage profile data');
+          return;
         }
-      }
-
-      if (error && !userData) {
-        console.error('Error fetching user profile:', error);
-        Alert.alert(
-          'Error', 
-          `Failed to load profile data: ${error.message || 'User not found in database'}`
-        );
-        setLoading(false);
-        return;
       }
 
       if (userData) {
         console.log('✅ Profile data loaded successfully');
         setProfileData(userData as UserProfileData);
         setEditedProfileData(userData as UserProfileData);
-      } else {
+      } else if (!networkError) {
         console.error('❌ No user data found');
+        // Only show error if it's not a network error (network errors already handled above)
         Alert.alert('Error', 'User profile not found. Please contact support.');
       }
     } catch (error: any) {
@@ -225,9 +280,6 @@ const Profile: React.FC = () => {
     );
   };
 
-  const handleSendMessage = (message: string) => {
-    console.log('Message sent:', message);
-  };
 
   const handleFieldChange = (field: keyof UserProfileData, value: string) => {
     setEditedProfileData(prev => prev ? { ...prev, [field]: value } : prev);
@@ -245,16 +297,12 @@ const Profile: React.FC = () => {
   };
 
   const handleSaveProfile = async () => {
-    if (!editedProfileData) return;
-    if (!editedProfileData.email?.trim()) {
-      Alert.alert('Validation', 'Email cannot be empty');
-      return;
-    }
+    if (!editedProfileData || !profileData) return;
 
     setSavingChanges(true);
     try {
+      // Email is read-only - use original email from profileData
       const updatePayload = {
-        email: editedProfileData.email,
         first_name: editedProfileData.first_name,
         last_name: editedProfileData.last_name,
         sex: editedProfileData.sex,
@@ -267,24 +315,11 @@ const Profile: React.FC = () => {
         barangay: editedProfileData.barangay,
       };
 
-      let emailChanged = editedProfileData.email !== profileData?.email;
-
-      if (emailChanged) {
-        const { error: authError } = await supabase.auth.updateUser({
-          email: editedProfileData.email,
-        });
-
-        if (authError) {
-          console.error('Error updating auth email:', authError);
-          Alert.alert('Error', authError.message || 'Failed to update email. Please try again.');
-          return;
-        }
-      }
-
+      // Use original email for the query - email cannot be changed
       const { error } = await supabase
         .from('tbl_users')
         .update(updatePayload)
-        .eq('email', profileData?.email || editedProfileData.email);
+        .eq('email', profileData.email);
 
       if (error) {
         console.error('Error updating profile:', error);
@@ -296,7 +331,8 @@ const Profile: React.FC = () => {
       if (user) {
         const updatedUserData = {
           ...user,
-          email: editedProfileData.email,
+          // Keep original email - email cannot be changed
+          email: profileData.email,
           phone: editedProfileData.phone || '',
           firstName: editedProfileData.first_name || '',
           lastName: editedProfileData.last_name || '',
@@ -312,15 +348,11 @@ const Profile: React.FC = () => {
         console.log('✅ Profile synced to local storage');
       }
 
-      setProfileData(prev => prev ? { ...prev, ...updatePayload } : prev);
+      // Update profile data but keep original email
+      setProfileData(prev => prev ? { ...prev, ...updatePayload, email: prev.email } : prev);
       await loadUser();
       setIsEditing(false);
-      Alert.alert(
-        'Success',
-        emailChanged
-          ? 'Profile updated successfully. Please re-verify your email if prompted.'
-          : 'Profile updated successfully'
-      );
+      Alert.alert('Success', 'Profile updated successfully');
     } catch (error) {
       console.error('Error saving profile:', error);
       Alert.alert('Error', 'An unexpected error occurred while saving changes');
@@ -434,19 +466,8 @@ const Profile: React.FC = () => {
               </View>
             </View>
             <Text style={styles.profileName}>{getFullName()}</Text>
-            {isEditing ? (
-              <TextInput
-                style={styles.profileEmailInput}
-                value={editedProfileData?.email || ''}
-                onChangeText={text => handleFieldChange('email', text)}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholder="Enter email"
-                placeholderTextColor="#FFCCCC"
-              />
-            ) : (
-              <Text style={styles.profileEmail}>{profileData?.email || 'No email'}</Text>
-            )}
+            {/* Email is read-only - cannot be edited */}
+            <Text style={styles.profileEmail}>{profileData?.email || 'No email'}</Text>
           </View>
 
           {isEditing && (
@@ -560,11 +581,21 @@ const Profile: React.FC = () => {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* ChatBox Component */}
-        <ChatBox onSendMessage={handleSendMessage} />
-
         {/* Bottom Navigation */}
         <CustomTabBar />
+
+        {/* Floating Chat Head - Only show when active case exists */}
+        {activeCase && (
+          <FloatingChatHead
+            onPress={() => {
+              router.push({
+                pathname: '/screens/Home/ChatScreen',
+                params: { report_id: activeCase.report_id },
+              });
+            }}
+            unreadCount={0} // TODO: Calculate unread count from messages
+          />
+        )}
       </View>
     </LinearGradient>
   );

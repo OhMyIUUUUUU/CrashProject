@@ -14,7 +14,15 @@
       "adaptiveIcon": {
         "backgroundColor": "#ff6b6b"
       },
-      "package": "com.darkspecter.AccessPoint"
+      "package": "com.darkspecter.AccessPoint",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "web": {
       "output": "static"
