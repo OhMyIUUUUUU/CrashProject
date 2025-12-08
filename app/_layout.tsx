@@ -1,11 +1,23 @@
 import NetInfo from '@react-native-community/netinfo';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { ErrorInfo, ReactNode, useEffect, useRef } from 'react';
-import { Text, View } from 'react-native';
+import { LogBox, Text, View } from 'react-native';
 import { AuthProvider } from './contexts/AuthContext';
 import { supabase } from './lib/supabase';
 import { startPersistentNotification } from './screens/AccessPoint/components/Notifications/NotificationService';
 import { foregroundLocationService } from './services/foregroundLocationService';
+
+// Suppress keep-awake errors in LogBox (React Native's error overlay)
+if (LogBox) {
+  LogBox.ignoreLogs([
+    /keep awake/i,
+    /keep-awake/i,
+    /unable to activate keep awake/i,
+    /activate keep awake/i,
+    /uncaught.*in promise.*keep awake/i,
+    /id:.*keep awake/i,
+  ]);
+}
 
 // Type declarations for web APIs (used in web platform)
 declare const window: any;
@@ -19,25 +31,42 @@ if (typeof console !== 'undefined' && console.error) {
   
   console.error = (...args: any[]) => {
     try {
+      // Convert all args to string and combine, handling Error objects, arrays, and nested structures
       const errorString = args.map(arg => {
         try {
           if (arg instanceof Error) {
-            return (arg.message || arg.toString() || '').toLowerCase();
+            // Get full error details including message, name, stack
+            return (arg.message || arg.name || arg.toString() || '').toLowerCase();
           }
-          return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+          if (Array.isArray(arg)) {
+            return arg.map(item => String(item)).join(' ').toLowerCase();
+          }
+          if (typeof arg === 'object' && arg !== null) {
+            // Try to extract error message from nested objects
+            const msg = (arg as any)?.message || (arg as any)?.reason?.message || (arg as any)?.error?.message;
+            if (msg) return String(msg).toLowerCase();
+            return JSON.stringify(arg).toLowerCase();
+          }
+          return String(arg).toLowerCase();
         } catch {
-          return String(arg);
+          return String(arg).toLowerCase();
         }
       }).join(' ').toLowerCase();
       
       // Suppress keep-awake errors (including expo-modules-core format and "in promise" format)
+      // Check for various formats including "[Error: Uncaught (in promise, id: X) Error: Unable to activate keep awake]"
       if (errorString.includes('keep awake') || 
           errorString.includes('keep-awake') ||
+          errorString.includes('keepawake') ||
           errorString.includes('unable to activate keep awake') ||
           errorString.includes('activate keep awake') ||
-          (errorString.includes('uncaught') && errorString.includes('keep awake')) ||
-          (errorString.includes('in promise') && errorString.includes('keep awake')) ||
-          (errorString.includes('expo-modules-core') && errorString.includes('keep awake'))) {
+          errorString.includes('unable to activate') && errorString.includes('keep') ||
+          (errorString.includes('uncaught') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+          (errorString.includes('in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+          (errorString.includes('uncaught (in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+          (errorString.includes('expo-modules-core') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+          (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+          (errorString.includes('[error:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake')))) {
         return; // Suppress - don't log
       }
       
@@ -69,28 +98,48 @@ function RootLayoutContent() {
     // Helper function to check if error is keep-awake related
     const isKeepAwakeError = (error: any): boolean => {
       if (!error) return false;
-      const errorMessage = error?.message || error?.toString() || String(error) || '';
+      
+      // Get error message from various possible locations
+      const errorMessage = error?.message || error?.reason?.message || error?.toString() || String(error) || '';
       const errorString = errorMessage.toLowerCase();
-      const errorStack = error?.stack?.toLowerCase() || '';
-      const errorName = error?.name?.toLowerCase() || '';
-      const errorCode = error?.code?.toLowerCase() || '';
+      const errorStack = error?.stack?.toLowerCase() || error?.reason?.stack?.toLowerCase() || '';
+      const errorName = error?.name?.toLowerCase() || error?.reason?.name?.toLowerCase() || '';
+      const errorCode = error?.code?.toLowerCase() || error?.reason?.code?.toLowerCase() || '';
+      
+      // Check nested error if present
+      const nestedError = error?.reason || error?.error;
+      const nestedErrorString = nestedError ? (nestedError?.message || nestedError?.toString() || String(nestedError) || '').toLowerCase() : '';
+      
+      // Combine all error strings for comprehensive checking
+      const allErrorText = (errorString + ' ' + nestedErrorString + ' ' + errorStack + ' ' + errorName + ' ' + errorCode).toLowerCase();
       
       // Check for keep-awake errors in various formats
+      // Including "Uncaught (in promise, id: X) Error: Unable to activate keep awake"
       return (
         errorString.includes('keep awake') || 
         errorString.includes('keep-awake') || 
         errorString.includes('unable to activate keep awake') ||
         errorString.includes('activate keep awake') ||
         errorString.includes('keepawake') ||
-        errorString.includes('uncaught (in promise') && errorString.includes('keep awake') ||
+        nestedErrorString.includes('keep awake') ||
+        nestedErrorString.includes('keep-awake') ||
+        nestedErrorString.includes('unable to activate keep awake') ||
+        (errorString.includes('uncaught') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
+        (errorString.includes('in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
+        (errorString.includes('uncaught (in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
+        (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
         errorStack.includes('keep awake') ||
         errorStack.includes('keep-awake') ||
         errorStack.includes('expo-keep-awake') ||
-        errorStack.includes('expo-modules-core') && errorString.includes('keep awake') ||
+        (errorStack.includes('expo-modules-core') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
         errorName.includes('keepawake') ||
         errorCode.includes('keepawake') ||
+        // Check combined text for any keep-awake mentions
+        allErrorText.includes('keep awake') ||
+        allErrorText.includes('keep-awake') ||
         // Also check the full error object string representation
-        JSON.stringify(error || {}).toLowerCase().includes('keep awake')
+        JSON.stringify(error || {}).toLowerCase().includes('keep awake') ||
+        JSON.stringify(error || {}).toLowerCase().includes('keep-awake')
       );
     };
 
@@ -188,16 +237,22 @@ function RootLayoutContent() {
         if (module === 'RCTLog' && method === 'logIfNoNativeHook') {
           const logLevel = args?.[0];
           const message = args?.[1] || '';
-          // Suppress keep-awake error logs (including "Uncaught (in promise)" format)
+          // Suppress keep-awake error logs (including "Uncaught (in promise, id: X)" format)
           if (logLevel === 'error' && typeof message === 'string') {
             const msgLower = message.toLowerCase();
+            // Check for keep-awake errors in various formats
             if (msgLower.includes('keep awake') || 
                 msgLower.includes('keep-awake') ||
+                msgLower.includes('keepawake') ||
                 msgLower.includes('unable to activate keep awake') ||
                 msgLower.includes('activate keep awake') ||
-                (msgLower.includes('uncaught') && msgLower.includes('keep awake')) ||
-                (msgLower.includes('in promise') && msgLower.includes('keep awake')) ||
-                (msgLower.includes('expo-modules-core') && msgLower.includes('keep awake')) ||
+                msgLower.includes('unable to activate') && msgLower.includes('keep') ||
+                (msgLower.includes('uncaught') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+                (msgLower.includes('in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+                (msgLower.includes('uncaught (in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+                (msgLower.includes('id:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+                (msgLower.includes('[error:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+                (msgLower.includes('expo-modules-core') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
                 msgLower.includes('network request failed') ||
                 msgLower.includes('networkerror') ||
                 msgLower.includes('failed to fetch')) {
@@ -248,6 +303,9 @@ function RootLayoutContent() {
         const errorString = args.map(arg => String(arg)).join(' ').toLowerCase();
         if (errorString.includes('keep awake') || 
             errorString.includes('keep-awake') ||
+            errorString.includes('keepawake') ||
+            errorString.includes('unable to activate keep awake') ||
+            (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
             errorString.includes('network request failed') ||
             errorString.includes('networkerror') ||
             errorString.includes('failed to fetch')) {

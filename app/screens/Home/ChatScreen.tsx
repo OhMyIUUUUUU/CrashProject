@@ -2,17 +2,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StatusBar,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -34,11 +34,14 @@ const ChatScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
   const channelRef = useRef<any>(null);
+  const receiverIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (report_id) {
       loadMessages();
       subscribeToMessages();
+      // Fetch and cache receiver_id once
+      fetchReceiverId();
     }
 
     return () => {
@@ -47,6 +50,7 @@ const ChatScreen: React.FC = () => {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      receiverIdRef.current = null;
     };
   }, [report_id]);
 
@@ -58,6 +62,24 @@ const ChatScreen: React.FC = () => {
       }, 100);
     }
   }, [messages]);
+
+  const fetchReceiverId = async () => {
+    if (!report_id) return;
+
+    try {
+      const { data: reportData, error: reportError } = await supabase
+        .from('tbl_reports')
+        .select('assigned_office_id')
+        .eq('report_id', report_id)
+        .single();
+
+      if (!reportError && reportData) {
+        receiverIdRef.current = reportData.assigned_office_id || null;
+      }
+    } catch (error: any) {
+      console.error('[ChatScreen] Error fetching receiver ID:', error.message || error);
+    }
+  };
 
   const loadMessages = async () => {
     if (!report_id) return;
@@ -71,13 +93,13 @@ const ChatScreen: React.FC = () => {
         .order('timestamp', { ascending: true });
 
       if (error) {
-        console.error('Error loading messages:', error);
+        console.error('[ChatScreen] Failed to load messages:', error.message || error);
         Alert.alert('Error', 'Failed to load messages. Please try again.');
       } else {
         setMessages(data || []);
       }
-    } catch (error) {
-      console.error('Error in loadMessages:', error);
+    } catch (error: any) {
+      console.error('[ChatScreen] Error loading messages:', error.message || error);
       Alert.alert('Error', 'Failed to load messages. Please try again.');
     } finally {
       setLoading(false);
@@ -103,31 +125,34 @@ const ChatScreen: React.FC = () => {
           filter: `report_id=eq.${report_id}`,
         },
         async (payload) => {
-          // Reload messages when a new message is inserted
-          await loadMessages();
+          const newMessage = payload.new as Message;
           
-          // Log new message (only if not from current user)
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const currentUserId = session?.user?.id;
-            const newMessage = payload.new as Message;
-            
-            // Only log if message is not from current user
-            if (newMessage.sender_id !== currentUserId && newMessage.sender_type !== 'user') {
-              console.log('New message received:', newMessage);
-            }
-          } catch (error) {
-            console.error('Error processing new message:', error);
-          }
+          // Append new message to state instead of reloading all
+          setMessages((prev) => {
+            // Check if message already exists (avoid duplicates)
+            const exists = prev.some(msg => msg.message_id === newMessage.message_id);
+            if (exists) return prev;
+            return [...prev, newMessage];
+          });
+          
+          // Message received and added to state
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          // Fallback to reloading messages on error
+          loadMessages();
+        }
+      });
 
     channelRef.current = channel;
   };
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !report_id || sending) return;
+
+    const messageText = newMessage.trim();
+    setNewMessage(''); // Clear input immediately for better UX
 
     try {
       setSending(true);
@@ -137,23 +162,18 @@ const ChatScreen: React.FC = () => {
       if (!senderId) {
         Alert.alert('Error', 'Please log in to send messages');
         setSending(false);
+        setNewMessage(messageText); // Restore message on error
         return;
       }
 
-      // Fetch report to get assigned_office_id (receiver_id)
-      const { data: reportData, error: reportError } = await supabase
-        .from('tbl_reports')
-        .select('assigned_office_id')
-        .eq('report_id', report_id)
-        .single();
-
-      if (reportError) {
-        console.error('Error fetching report:', reportError);
+      // Use cached receiver_id, fetch if not available
+      let receiverId = receiverIdRef.current;
+      if (receiverId === null) {
+        await fetchReceiverId();
+        receiverId = receiverIdRef.current;
       }
 
-      const receiverId = reportData?.assigned_office_id || null;
-
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tbl_messages')
         .insert([
           {
@@ -161,22 +181,29 @@ const ChatScreen: React.FC = () => {
             sender_id: senderId,
             sender_type: 'user',
             receiver_id: receiverId,
-            message_content: newMessage.trim(),
+            message_content: messageText,
             timestamp: new Date().toISOString(),
           },
-        ]);
+        ])
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error sending message:', error);
+        console.error('[ChatScreen] Failed to send message:', error.message || error);
         Alert.alert('Error', 'Failed to send message. Please try again.');
-      } else {
-        setNewMessage('');
-        // Reload messages to ensure UI updates immediately
-        await loadMessages();
+        setNewMessage(messageText); // Restore message on error
+      } else if (data) {
+        // Optimistically add message to UI (real-time subscription will also add it)
+        setMessages((prev) => {
+          const exists = prev.some(msg => msg.message_id === data.message_id);
+          if (exists) return prev;
+          return [...prev, data];
+        });
       }
-    } catch (error) {
-      console.error('Error in sendMessage:', error);
+    } catch (error: any) {
+      console.error('[ChatScreen] Error sending message:', error.message || error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
+      setNewMessage(messageText); // Restore message on error
     } finally {
       setSending(false);
     }
@@ -307,24 +334,23 @@ const ChatScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={{ flex: 1 }}>
-        {/* Header */}
-        <View
-          style={{
-            backgroundColor: '#FF6666',
-            paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight || 0,
-            paddingBottom: 16,
-            paddingHorizontal: 20,
-            shadowColor: '#FF6666',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 5,
-            zIndex: 10,
-          }}
-        >
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <StatusBar barStyle="light-content" backgroundColor="#FF6666" />
+      {/* Header */}
+      <View style={{ backgroundColor: '#FF6666', paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight || 0 }}>
+        <SafeAreaView style={{ backgroundColor: '#FF6666' }}>
+          <View
+            style={{
+              backgroundColor: '#FF6666',
+              paddingBottom: 16,
+              paddingHorizontal: 20,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}
+          >
           <View style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -338,7 +364,7 @@ const ChatScreen: React.FC = () => {
                   width: 40,
                   height: 40,
                   borderRadius: 20,
-                  backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
                   justifyContent: 'center',
                   alignItems: 'center',
                   marginRight: 12,
@@ -350,21 +376,21 @@ const ChatScreen: React.FC = () => {
                 width: 44,
                 height: 44,
                 borderRadius: 22,
-                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
                 justifyContent: 'center',
                 alignItems: 'center',
                 marginRight: 12,
               }}>
                 <Ionicons name="chatbubbles" size={22} color="#FFFFFF" />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={{
                   fontSize: 18,
                   fontWeight: '700',
                   color: '#FFFFFF',
                   marginBottom: 2,
                 }}>
-                  Support Chat
+                  Police Station
                 </Text>
                 <Text style={{
                   fontSize: 13,
@@ -376,7 +402,10 @@ const ChatScreen: React.FC = () => {
               </View>
             </View>
           </View>
-        </View>
+          </View>
+        </SafeAreaView>
+      </View>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
 
         {/* Messages List */}
         <KeyboardAvoidingView
@@ -461,27 +490,24 @@ const ChatScreen: React.FC = () => {
             />
           )}
         </KeyboardAvoidingView>
+      </View>
 
-        {/* Input Container - Fixed at Bottom */}
-        <View style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#FFFFFF',
-          paddingHorizontal: 20,
-          paddingTop: 14,
-          paddingBottom: Platform.OS === 'ios' ? 30 : 18,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          borderTopWidth: 0,
-          shadowColor: '#FF6666',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.1,
-          shadowRadius: 12,
-          elevation: 8,
-          zIndex: 20,
-        }}>
+      {/* Input Container - Fixed at Bottom */}
+      <View style={{
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 20,
+        paddingTop: 14,
+        paddingBottom: Platform.OS === 'ios' ? 0 : 8,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        borderTopWidth: 1,
+        borderTopColor: '#F0F0F0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 8,
+      }}>
           <View style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -534,10 +560,9 @@ const ChatScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </SafeAreaView>
+        <SafeAreaView style={{ backgroundColor: '#FFFFFF' }} />
+    </View>
   );
 };
 
 export default ChatScreen;
-

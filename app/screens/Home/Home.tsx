@@ -31,15 +31,13 @@ const Home: React.FC = () => {
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sosCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const activeCaseRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRefreshingActiveCaseRef = useRef(false);
+  
+  // Ripple animation for SOS button
+  const rippleScale = useRef(new Animated.Value(0)).current;
+  const rippleOpacity = useRef(new Animated.Value(0)).current;
 
-  // Debug: Log active case changes
-  useEffect(() => {
-    if (activeCase) {
-      console.log('✅ Active Case Detected:', activeCase.report_id, activeCase.status);
-    } else {
-      console.log('❌ No Active Case');
-    }
-  }, [activeCase]);
 
   // Monitor network connectivity - redirect to offline mode if connection is lost
   useEffect(() => {
@@ -122,18 +120,38 @@ const Home: React.FC = () => {
   }, [pulseAnim]);
 
   const handleSOSPressIn = useCallback(() => {
+    // Scale down animation
     Animated.spring(scaleAnim, {
       toValue: 0.95,
       useNativeDriver: true,
+      tension: 300,
+      friction: 10,
     }).start();
-  }, [scaleAnim]);
+    
+    // Ripple effect - start (expands around the button)
+    rippleScale.setValue(0.8);
+    rippleOpacity.setValue(0.8);
+    Animated.parallel([
+      Animated.timing(rippleScale, {
+        toValue: 1.5,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(rippleOpacity, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [scaleAnim, rippleScale, rippleOpacity]);
 
   const handleSOSPressOut = useCallback(() => {
+    // Scale back animation
     Animated.spring(scaleAnim, {
       toValue: 1,
-      friction: 3,
-      tension: 40,
       useNativeDriver: true,
+      tension: 300,
+      friction: 10,
     }).start();
   }, [scaleAnim]);
 
@@ -195,7 +213,7 @@ const Home: React.FC = () => {
     );
   }, [activeCase, cancelling, cancelReport, countdown, checkActiveCase]);
 
-  // Cleanup countdown on unmount
+  // Cleanup countdown and timeouts on unmount
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) {
@@ -204,6 +222,9 @@ const Home: React.FC = () => {
       if (sosCountdownIntervalRef.current) {
         clearInterval(sosCountdownIntervalRef.current);
       }
+      if (activeCaseRefreshTimeoutRef.current) {
+        clearTimeout(activeCaseRefreshTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -211,7 +232,7 @@ const Home: React.FC = () => {
     setSendingSOS(true);
 
     try {
-      // 1. Fetch User ID from Supabase session (from database)
+      // 1. Fetch User ID from Supabase session
       const { data: { session } } = await supabase.auth.getSession();
       const authUserId = session?.user?.id || null;
       const userEmail = session?.user?.email || null;
@@ -223,49 +244,60 @@ const Home: React.FC = () => {
         return;
       }
 
-      // 2. Fetch User Info from database (try by user_id first, then by email)
+      // 2. Parallel operations: Fetch User Info and GPS Location simultaneously
+      const [userInfoResult, locationResult] = await Promise.allSettled([
+        // Fetch User Info - try both queries in parallel for speed
+        Promise.race([
+          authUserId ? supabase
+            .from('tbl_users')
+            .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
+            .eq('user_id', authUserId)
+            .single() : Promise.resolve({ data: null, error: null }),
+          userEmail ? supabase
+            .from('tbl_users')
+            .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
+            .eq('email', userEmail)
+            .single() : Promise.resolve({ data: null, error: null })
+        ]).then(result => {
+          // Return first successful result
+          if (result.data && !result.error) return result;
+          return { data: null, error: null };
+        }),
+        // Fetch GPS Location with balanced accuracy for speed
+        (async () => {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            throw new Error('Location permission denied');
+          }
+          // Use Balanced accuracy for faster GPS fix (faster than High)
+          const currentLocation = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          return {
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+          };
+        })()
+      ]);
+
+      // Extract user info
       let userInfo = null;
       let reporterId = null;
-
-      // Try to get user by user_id (matching Supabase auth user ID)
-      if (authUserId) {
-        const { data, error } = await supabase
-          .from('tbl_users')
-          .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
-          .eq('user_id', authUserId)
-          .single();
-        
-        if (data && !error) {
-          userInfo = data;
-          reporterId = data.user_id;
-        }
-      }
-
-      // If not found by user_id, try by email
-      if (!userInfo && userEmail) {
-        const { data, error } = await supabase
-          .from('tbl_users')
-          .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
-          .eq('email', userEmail)
-          .single();
-        
-        if (data && !error) {
-          userInfo = data;
-          reporterId = data.user_id;
-        }
+      if (userInfoResult.status === 'fulfilled' && userInfoResult.value.data) {
+        userInfo = userInfoResult.value.data;
+        reporterId = userInfo.user_id;
       }
 
       if (!userInfo || !reporterId) {
-        console.error('Error fetching user info from database');
+        console.error('[Home] Error fetching user info from database');
         Alert.alert('Error', 'Unable to fetch user information from database. Please try again.');
         setSendingSOS(false);
         setSosCountdown(0);
         return;
       }
 
-      // 3. Fetch GPS Location
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      // Extract location
+      if (locationResult.status === 'rejected') {
         Alert.alert(
           'Location Permission Required',
           'Location permission is required to send SOS. Please enable it in settings.',
@@ -276,22 +308,19 @@ const Home: React.FC = () => {
         return;
       }
 
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      const latitude = currentLocation.coords.latitude;
-      const longitude = currentLocation.coords.longitude;
+      const { latitude, longitude } = locationResult.value;
 
-      // Reverse geocode to get city and barangay from GPS coordinates ONLY
-      const geocodeResult = await reverseGeocode(latitude, longitude);
-      const locationCity = geocodeResult.city || null; // Only from GPS, no profile fallback
-      const locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
+      // 3. Get current location city and barangay from GPS (reverse geocode)
+      // Run geocoding in parallel while preparing description
+      const geocodePromise = reverseGeocode(latitude, longitude).catch(() => ({
+        city: null,
+        barangay: null,
+        fullAddress: null
+      }));
 
       // Create description with user info
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
-      const locationAddress = geocodeResult.fullAddress || 
-        (locationBarangay && locationCity ? `${locationBarangay}, ${locationCity}` : null) ||
-        `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      const locationAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       
       const description = `EMERGENCY SOS ALERT\n\n` +
         `Reporter: ${userName}\n` +
@@ -303,26 +332,7 @@ const Home: React.FC = () => {
         `Role: Witness\n` +
         `Time: ${new Date().toLocaleString()}`;
 
-      const now = new Date().toISOString();
-
-      // Validate reporter_id before proceeding
-      if (!reporterId) {
-        console.error('❌ No reporter_id available - cannot create report');
-        Alert.alert('Error', 'Unable to identify user. Please log in again.');
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
-
-      console.log('✅ Reporter ID validated:', reporterId);
-      console.log('✅ User info:', {
-        name: userName,
-        email: userInfo.email,
-        city: userInfo.city,
-        barangay: userInfo.barangay
-      });
-
-      // 4. Call RPC to create report + auto-assign nearest police office
+      // 4. Call RPC to create report immediately
       const { data, error } = await supabase.rpc('create_emergency_sos', {
         p_user_id: reporterId,
         p_lat: latitude,
@@ -332,7 +342,7 @@ const Home: React.FC = () => {
       });
 
       if (error) {
-        console.error('❌ SOS RPC error:', error);
+        console.error('[Home] SOS RPC error:', error.message || error);
         Alert.alert(
           'Error',
           `Failed to send SOS: ${error.message || 'Unknown error'}`,
@@ -354,21 +364,38 @@ const Home: React.FC = () => {
         return;
       }
 
-      console.log('✅ SOS created via RPC:', { reportId, assignedOfficeId, assignedOfficeName });
-      if (assignedOfficeId) {
-        console.log(`📍 Assigned nearest office: ${assignedOfficeName || 'Unknown'} (${assignedOfficeId})`);
-      } else {
-        console.warn('⚠️ No assigned office returned from RPC');
-      }
+      // 5. Update report with current location's city and barangay (from GPS, not profile)
+      // Get geocoded location and update report
+      geocodePromise.then(async (geocodeResult) => {
+        if (geocodeResult.city || geocodeResult.barangay) {
+          try {
+            const updateData: { location_city?: string; location_barangay?: string } = {};
+            if (geocodeResult.city) {
+              // Add "City" suffix to city name (e.g., "Manila" -> "Manila City")
+              const cityName = geocodeResult.city.trim();
+              updateData.location_city = cityName.endsWith(' City') ? cityName : `${cityName} City`;
+            }
+            if (geocodeResult.barangay) {
+              updateData.location_barangay = geocodeResult.barangay;
+            }
 
-      // Immediately refresh active case after successful SOS submission
-      await checkActiveCase();
+            // Update the report with current GPS location's city and barangay
+            await supabase
+              .from('tbl_reports')
+              .update(updateData)
+              .eq('report_id', reportId);
+          } catch (updateError) {
+            // Silently fail - report is already created, location update is non-critical
+            console.error('[Home] Error updating report location:', updateError);
+          }
+        }
+      }).catch(() => {
+        // Silently fail - geocoding failed but report is already created
+      });
 
-      // Refresh a couple times to account for latency
-      [300, 800, 1500].forEach((delay) => {
-        setTimeout(async () => {
-          await checkActiveCase();
-        }, delay);
+      // Refresh active case in background (don't wait)
+      checkActiveCase().catch(() => {
+        // Silently fail - will retry on next check
       });
 
       const reportIdForDisplay = `${reportId}`.substring(0, 8) + '...';
@@ -378,7 +405,8 @@ const Home: React.FC = () => {
         [{ 
           text: 'OK',
           onPress: () => {
-            setTimeout(() => checkActiveCase(), 200);
+            // Navigate immediately, refresh in background
+            checkActiveCase().catch(() => {});
             router.push({
               pathname: '/screens/Home/ChatScreen',
               params: { report_id: reportId },
@@ -400,9 +428,10 @@ const Home: React.FC = () => {
   }, [checkActiveCase]);
 
   const handleSOSPress = useCallback(async () => {
-    if (sendingSOS) return;
-
-    console.log('🔴 SOS Button Clicked!');
+    // Guard against race conditions - prevent multiple simultaneous SOS attempts
+    if (sendingSOS || sosCountdown > 0) {
+      return;
+    }
     
     // Check database directly for active case (fetch from database only)
     const { data: { session } } = await supabase.auth.getSession();
@@ -450,11 +479,8 @@ const Home: React.FC = () => {
       }
     }
 
-    console.log('🔴 Current Active Case:', currentActiveCase);
-
     // ALWAYS check for active case first - if exists, show it immediately
     if (currentActiveCase && currentActiveCase.report_id) {
-      console.log('✅ Showing Active Case Popup');
       
       // Use assigned_office_id as office_id
       const officeId = currentActiveCase.assigned_office_id;
@@ -470,7 +496,6 @@ const Home: React.FC = () => {
         (officeName ? `🏢 Office: ${officeName}\n` : '🏢 Office: Not assigned yet\n') +
         (currentActiveCase.description ? `\n📝 Description:\n${currentActiveCase.description.substring(0, 120)}${currentActiveCase.description.length > 120 ? '...' : ''}` : '');
       
-      console.log('📱 Displaying Alert with case info:', caseInfo);
       
       Alert.alert(
         'Active Case',
@@ -479,7 +504,6 @@ const Home: React.FC = () => {
           { 
             text: '💬 Open Chat', 
             onPress: () => {
-              console.log('Opening chat');
               if (activeCase) {
                 router.push({
                   pathname: '/screens/Home/ChatScreen',
@@ -491,7 +515,6 @@ const Home: React.FC = () => {
           { 
             text: '👁️ View Details', 
             onPress: () => {
-              console.log('Viewing details');
               setTimeout(() => {
                 scrollViewRef.current?.scrollTo({ y: 400, animated: true });
               }, 100);
@@ -500,7 +523,6 @@ const Home: React.FC = () => {
           { 
             text: '🗑️ Cancel Report', 
             onPress: () => {
-              console.log('Cancelling report');
               handleCancelReport();
             }, 
             style: 'destructive' 
@@ -509,11 +531,8 @@ const Home: React.FC = () => {
         ],
         { cancelable: true }
       );
-      console.log('✅ Alert should be displayed now');
       return; // Stop here - don't proceed with SOS
     }
-
-    console.log('❌ No active case found, starting SOS countdown');
     // No active case - start countdown before sending SOS
     
     // Start 5-second countdown
@@ -651,9 +670,23 @@ const Home: React.FC = () => {
                 },
               ]}
             >
+              {/* Ripple effect - positioned outside button to be visible around it */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: buttonSize * 1.5,
+                  height: buttonSize * 1.5,
+                  borderRadius: (buttonSize * 1.5) / 2,
+                  backgroundColor: 'rgba(255, 107, 107, 0.3)',
+                  transform: [{ scale: rippleScale }],
+                  opacity: rippleOpacity,
+                  top: -buttonSize * 0.25,
+                  left: -buttonSize * 0.25,
+                  zIndex: 0,
+                }}
+              />
               <TouchableOpacity
                 onPress={() => {
-                  console.log('🔴 Button Pressed - Active Case:', activeCase);
                   handleSOSPress();
                 }}
                 onPressIn={handleSOSPressIn}
@@ -667,6 +700,7 @@ const Home: React.FC = () => {
                     height: buttonSize,
                     borderRadius: buttonSize / 2,
                     opacity: sendingSOS ? 0.7 : 1,
+                    zIndex: 1,
                   }
                 ]}
               >

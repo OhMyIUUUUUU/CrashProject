@@ -2,9 +2,9 @@ import notifee from '@notifee/react-native'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator, View } from 'react-native'
+import { checkActiveReport, hasInternetConnection } from '../utils/sessionRestoration'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
-import { checkActiveReport, hasInternetConnection } from './utils/sessionRestoration'
 
 // Register the foreground service
 // This keeps the "runner" active in the background

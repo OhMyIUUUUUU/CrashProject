@@ -43,10 +43,6 @@ export async function reverseGeocode(
       // Added namedetails=1 for more address component names
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=16&addressdetails=1&namedetails=1&accept-language=en,fil&extratags=1&addressdetails=1`;
       
-      // Only log attempts if in development mode
-      if (__DEV__ && attempt === 0) {
-        console.log(`📍 Geocoding coordinates:`, latitude, longitude);
-      }
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
@@ -109,10 +105,6 @@ export async function reverseGeocode(
       // Philippines-specific address parsing
       // Try multiple strategies to extract city and barangay
       
-      // Log raw data only in development or when debugging
-      if (__DEV__) {
-        console.log('📍 Geocoding raw data:', { address, display_name: data.display_name });
-      }
       
       // Common subdivision/neighborhood/district names that are NOT barangays (filter these out)
       const subdivisionKeywords = [
@@ -380,19 +372,6 @@ export async function reverseGeocode(
       if (cleanedRegion) addressParts.push(cleanedRegion);
       const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : null;
 
-      // Only log final result, not all the intermediate steps
-      if (cleanedCity || cleanedBarangay) {
-        console.log('📍 Location:', {
-          barangay: cleanedBarangay || 'Not found',
-          city: cleanedCity || 'Not found',
-          region: cleanedRegion || 'Not found'
-        });
-      }
-      
-      // Log warning only if barangay is missing but we have city
-      if (!cleanedBarangay && cleanedCity) {
-        console.warn('⚠️ Barangay not found for location');
-      }
 
       return {
         city: cleanedCity,

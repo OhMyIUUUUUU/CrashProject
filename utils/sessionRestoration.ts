@@ -1,5 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../app/lib/supabase';
 
 export interface ActiveReport {
   report_id: string;
@@ -23,7 +23,6 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
     // Step 1: Verify internet connectivity
     const netInfo = await NetInfo.fetch();
     if (!netInfo.isConnected) {
-      console.log('📡 No internet connection - skipping session restoration');
       return null;
     }
 
@@ -31,7 +30,6 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError || !session?.user) {
-      console.log('🔐 No active session - skipping session restoration');
       return null;
     }
 
@@ -67,14 +65,10 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
     }
 
     if (!reporterId) {
-      console.log('👤 User not found in database - skipping session restoration');
       return null;
     }
 
     // Step 4: Query tbl_reports for active cases
-    // Active = status NOT 'resolved' AND NOT 'cancelled'
-    console.log('🔍 Checking for active reports for user:', reporterId);
-    
     const { data: reports, error: reportsError } = await supabase
       .from('tbl_reports')
       .select('report_id, reporter_id, status, category, description, created_at')
@@ -82,40 +76,29 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
       .order('created_at', { ascending: false });
 
     if (reportsError) {
-      console.error('❌ Error querying reports:', reportsError);
+      console.error('[SessionRestoration] Error querying reports:', reportsError.message || reportsError);
       return null;
     }
 
     if (!reports || reports.length === 0) {
-      console.log('📋 No reports found for user');
       return null;
     }
 
     // Step 5: Filter for active reports (only 'pending' and 'responding' are active)
-    // This matches the logic in useActiveCase hook
     const activeReports = reports.filter(report => {
       const status = report.status?.toLowerCase().trim();
-      const isActive = status === 'pending' || status === 'responding';
-      
-      if (isActive) {
-        console.log(`✅ Found active report: ${report.report_id} (status: ${report.status})`);
-      }
-      
-      return isActive;
+      return status === 'pending' || status === 'responding';
     });
 
     // Step 6: Return the most recent active report
     if (activeReports.length > 0) {
-      const activeReport = activeReports[0] as ActiveReport;
-      console.log(`🎯 Session restoration: Active report found - ${activeReport.report_id}`);
-      return activeReport;
+      return activeReports[0] as ActiveReport;
     }
 
-    console.log('📋 No active reports found - user can proceed to dashboard');
     return null;
 
-  } catch (error) {
-    console.error('❌ Error in session restoration:', error);
+  } catch (error: any) {
+    console.error('[SessionRestoration] Error in session restoration:', error.message || error);
     // Fail gracefully - don't block app startup
     return null;
   }
@@ -129,8 +112,8 @@ export const hasInternetConnection = async (): Promise<boolean> => {
   try {
     const netInfo = await NetInfo.fetch();
     return netInfo.isConnected ?? false;
-  } catch (error) {
-    console.error('Error checking network connection:', error);
+  } catch (error: any) {
+    console.error('[SessionRestoration] Error checking network connection:', error.message || error);
     return false;
   }
 };

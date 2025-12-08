@@ -64,8 +64,6 @@ export const useActiveCase = () => {
 
       // Check for active cases from tbl_reports
       // Only show pending and responding cases (resolved/closed cases go to notifications)
-      // Fetch all reports first, then filter for active statuses
-      console.log('🔍 Checking active case for reporter_id:', reporterId);
       const { data: reports, error } = await supabase
         .from('tbl_reports')
         .select(`
@@ -84,40 +82,27 @@ export const useActiveCase = () => {
         .eq('reporter_id', reporterId)
         .order('created_at', { ascending: false });
 
-      console.log('📊 Total reports found:', reports?.length || 0);
-      if (reports && reports.length > 0) {
-        console.log('📋 All report statuses:', reports.map(r => ({ id: r.report_id, status: r.status })));
-      }
-
       // Filter for active cases (exclude cancelled, resolved, and closed cases)
       const activeReports = reports?.filter(report => {
         const status = report.status?.toLowerCase().trim();
-        const isActive = status === 'pending' || status === 'responding';
-        console.log(`🔎 Report ${report.report_id}: status="${report.status}" (normalized="${status}") -> ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
-        // Only show pending and responding cases (exclude cancelled, resolved, and closed)
-        return isActive;
+        return status === 'pending' || status === 'responding';
       }) || [];
 
-      console.log('✅ Active reports found:', activeReports.length);
-
       if (error) {
-        console.error('❌ Error checking active case:', error);
+        console.error('[useActiveCase] Error checking active case:', error.message || error);
         setActiveCase(null);
       } else if (activeReports && activeReports.length > 0) {
         const report = activeReports[0];
-        console.log('✅ Setting active case:', report.report_id, 'Status:', report.status);
-        
         // Use assigned_office_id as office_id
         setActiveCase({
           ...report,
           office_id: report.assigned_office_id,
         } as ActiveCase);
       } else {
-        console.log('❌ No active reports found - setting activeCase to null');
         setActiveCase(null);
       }
-    } catch (error) {
-      console.error('Error in checkActiveCase:', error);
+    } catch (error: any) {
+      console.error('[useActiveCase] Error in checkActiveCase:', error.message || error);
       setActiveCase(null);
     } finally {
       setLoading(false);
@@ -182,7 +167,7 @@ export const useActiveCase = () => {
         .limit(20); // Get last 20 cases for notifications
 
       if (error) {
-        console.error('Error fetching notifications:', error);
+        console.error('[useActiveCase] Error fetching notifications:', error.message || error);
         setNotifications([]);
       } else {
         // Use assigned_office_id as office_id for each notification
@@ -192,8 +177,8 @@ export const useActiveCase = () => {
         } as ActiveCase));
         setNotifications(notificationsWithOffice);
       }
-    } catch (error) {
-      console.error('Error in checkNotifications:', error);
+    } catch (error: any) {
+      console.error('[useActiveCase] Error in checkNotifications:', error.message || error);
       setNotifications([]);
     }
   };
@@ -237,71 +222,57 @@ export const useActiveCase = () => {
         .eq('report_id', reportId);
 
       if (!mediaFetchError && mediaFiles && mediaFiles.length > 0) {
-        console.log(`🗑️ Found ${mediaFiles.length} media file(s) to delete from storage`);
-        
         // Extract file paths from URLs and delete from storage
         const bucketName = 'crash-media';
         const deletePromises = mediaFiles.map(async (media) => {
           try {
             // Extract file path from URL
-            // URL format: https://...supabase.co/storage/v1/object/public/crash-media/reports/...
             const urlParts = media.file_url.split('/');
             const pathIndex = urlParts.findIndex(part => part === bucketName);
             if (pathIndex !== -1 && pathIndex < urlParts.length - 1) {
               const filePath = urlParts.slice(pathIndex + 1).join('/');
-              console.log(`🗑️ Deleting file from storage: ${filePath}`);
               
               const { error: deleteError } = await supabase.storage
                 .from(bucketName)
                 .remove([filePath]);
 
               if (deleteError) {
-                console.error(`❌ Error deleting file ${filePath}:`, deleteError);
-              } else {
-                console.log(`✅ Successfully deleted file: ${filePath}`);
+                console.error('[useActiveCase] Error deleting file:', deleteError.message || deleteError);
               }
             }
-          } catch (error) {
-            console.error('Error processing file deletion:', error);
+          } catch (error: any) {
+            console.error('[useActiveCase] Error processing file deletion:', error.message || error);
           }
         });
 
         await Promise.all(deletePromises);
-        console.log('✅ Finished deleting files from storage');
       }
 
       // Delete associated messages first (if any)
-      console.log('🗑️ Deleting messages for report:', reportId);
       const { error: messagesError } = await supabase
         .from('tbl_messages')
         .delete()
         .eq('report_id', reportId);
       
       if (messagesError) {
-        console.warn('⚠️ Error deleting messages (may not exist):', messagesError);
-      } else {
-        console.log('✅ Messages deleted');
+        console.warn('[useActiveCase] Error deleting messages:', messagesError.message || messagesError);
       }
       
       // Delete the report from database
-      console.log('🗑️ Deleting report from database:', reportId);
       const { error } = await supabase
         .from('tbl_reports')
         .delete()
         .eq('report_id', reportId);
 
       if (error) {
-        console.error('❌ Error deleting report:', error);
-        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        console.error('[useActiveCase] Error deleting report:', error.message || error);
         return false;
       }
       
-      console.log('✅ Report deleted from database');
-      
       await checkActiveCase();
       return true;
-    } catch (error) {
-      console.error('Error cancelling report:', error);
+    } catch (error: any) {
+      console.error('[useActiveCase] Error cancelling report:', error.message || error);
       return false;
     }
   };
