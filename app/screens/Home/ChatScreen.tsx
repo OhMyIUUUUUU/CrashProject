@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    AppState,
     FlatList,
     KeyboardAvoidingView,
     Platform,
@@ -13,10 +12,9 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { displayNotification } from '../AccessPoint/components/Notifications/notificationService';
 
 interface Message {
   message_id: string;
@@ -108,32 +106,18 @@ const ChatScreen: React.FC = () => {
           // Reload messages when a new message is inserted
           await loadMessages();
           
-          // Show notification for new message (only if not from current user)
+          // Log new message (only if not from current user)
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const currentUserId = session?.user?.id;
             const newMessage = payload.new as Message;
             
-            // Only show notification if message is not from current user
+            // Only log if message is not from current user
             if (newMessage.sender_id !== currentUserId && newMessage.sender_type !== 'user') {
-              // Check if app is in foreground
-              const appState = AppState.currentState;
-              if (appState === 'active') {
-                // Show notification in foreground
-                await displayNotification(
-                  'New Message',
-                  newMessage.message_content || 'You have a new message',
-                      {
-                        type: 'message',
-                        report_id: String(report_id),
-                        message_id: String(newMessage.message_id),
-                        navigation: 'true',
-                      }
-                );
-              }
+              console.log('New message received:', newMessage);
             }
           } catch (error) {
-            console.error('Error showing notification:', error);
+            console.error('Error processing new message:', error);
           }
         }
       )

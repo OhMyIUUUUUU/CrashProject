@@ -1,9 +1,43 @@
+import notifee from '@notifee/react-native'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
 import { checkActiveReport, hasInternetConnection } from './utils/sessionRestoration'
+
+// Register the foreground service
+// This keeps the "runner" active in the background
+notifee.registerForegroundService((notification) => {
+  return new Promise(() => {
+    // The service continues to run until you specifically stop it.
+    // You can put logic here if you need to do tasks in the background later.
+  });
+});
+
+// Register background event handler
+// This handles notification events when the app is in the background
+notifee.onBackgroundEvent(async ({ type, detail }) => {
+  const { notification, pressAction } = detail;
+
+  // Handle notification press actions
+  if (type === 1) { // EventType.PRESS
+    // User pressed the notification
+    if (pressAction?.id === 'default') {
+      // Default action - app will open automatically
+      console.log('Notification pressed - opening app');
+    }
+  }
+
+  // Handle other event types if needed
+  // type 2 = ACTION_PRESS (button press)
+  // type 3 = DELIVERED
+  // type 4 = APP_BLOCKED
+  // type 5 = CHANNEL_BLOCKED
+  // type 6 = CHANNEL_GROUP_BLOCKED
+  // type 7 = TRIGGER_NOTIFICATION_CREATED
+  // type 8 = TRIGGER_NOTIFICATION_FAILED
+});
 
 /**
  * Navigation helper that checks for active reports and routes accordingly

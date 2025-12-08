@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { reverseGeocode } from '../../../utils/geocoding';
 import { useAuth } from '../../contexts/AuthContext';
-import { useActiveCase } from '../../hooks/useActiveCase';
+import { ActiveCase, useActiveCase } from '../../hooks/useActiveCase';
 import { supabase } from '../../lib/supabase';
 import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
 import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
@@ -322,166 +322,70 @@ const Home: React.FC = () => {
         barangay: userInfo.barangay
       });
 
-      // 4. Create report payload with default category "Emergency" and role "witness"
-      const reportPayload = {
-        reporter_id: reporterId,
-        assigned_office_id: null,
-        category: 'Emergency', // Default category
-        description: description,
-        status: 'pending',
-        latitude: latitude,
-        longitude: longitude,
-        location_city: locationCity, // From GPS geocoding, fallback to user profile
-        location_barangay: locationBarangay, // From GPS geocoding, fallback to user profile
-        remarks: `SOS triggered via mobile app. Role: Witness. User: ${userName}`,
-        created_at: now,
-        updated_at: now,
-      };
-
-      // 5. Send SOS report to database
-      console.log('📤 Attempting to insert SOS report to database...');
-      console.log('📋 Report payload:', JSON.stringify(reportPayload, null, 2));
-      console.log('📋 Reporter ID type:', typeof reporterId, 'Value:', reporterId);
-      
-      const { data, error } = await supabase
-        .from('tbl_reports')
-        .insert([reportPayload])
-        .select()
-        .single();
+      // 4. Call RPC to create report + auto-assign nearest police office
+      const { data, error } = await supabase.rpc('create_emergency_sos', {
+        p_user_id: reporterId,
+        p_lat: latitude,
+        p_long: longitude,
+        p_category: 'Emergency',
+        p_description: description,
+      });
 
       if (error) {
-        console.error('❌ SOS submission error:', error);
-        console.error('❌ Error details:', JSON.stringify(error, null, 2));
-        console.error('❌ Error code:', error.code);
-        console.error('❌ Error message:', error.message);
-        console.error('❌ Error hint:', error.hint);
-        
+        console.error('❌ SOS RPC error:', error);
         Alert.alert(
           'Error',
-          `Failed to send SOS: ${error.message || 'Unknown error'}\n\nError Code: ${error.code || 'N/A'}\n\nPlease check the console for details.`,
+          `Failed to send SOS: ${error.message || 'Unknown error'}`,
           [{ text: 'OK' }]
         );
         setSendingSOS(false);
         setSosCountdown(0);
         return;
-      } else {
-        console.log('✅ SOS submitted successfully:', data);
-        console.log('📋 Report ID:', data.report_id);
-        console.log('📋 Status:', data.status);
-        console.log('📋 Reporter ID:', data.reporter_id);
-        console.log('📋 Category:', data.category);
-        
-        // Verify the report was created with correct status
-        if (data.status && (data.status.toLowerCase() === 'pending' || data.status.toLowerCase() === 'responding')) {
-          console.log('✅ Report has active status - should appear in active case');
-        } else {
-          console.warn('⚠️ Report status is not active:', data.status);
-        }
-        
-        // Directly verify the report exists in database and set active case immediately
-        try {
-          console.log('🔍 Verifying report exists in database with ID:', data.report_id);
-          const { data: verifyData, error: verifyError } = await supabase
-            .from('tbl_reports')
-            .select('*')
-            .eq('report_id', data.report_id)
-            .single();
-          
-          if (verifyError) {
-            console.error('❌ Verification failed - report not found in database:', verifyError);
-            console.error('❌ This means the insert may have failed even though no error was returned');
-          } else if (verifyData) {
-            console.log('✅ Verified report exists in database');
-            console.log('📋 Verified report data:', JSON.stringify(verifyData, null, 2));
-            if (verifyData.status?.toLowerCase() === 'pending' || verifyData.status?.toLowerCase() === 'responding') {
-              console.log('✅ Report is active - forcing active case update');
-            }
-          } else {
-            console.warn('⚠️ Verification returned no data - report may not exist');
-          }
-        } catch (verifyErr) {
-          console.error('❌ Error verifying report:', verifyErr);
-        }
-        
-        // Also try to query all reports by this reporter to see if it appears
-        try {
-          console.log('🔍 Querying all reports for reporter_id:', reporterId);
-          const { data: allReports, error: queryError } = await supabase
-            .from('tbl_reports')
-            .select('report_id, status, category, created_at')
-            .eq('reporter_id', reporterId)
-            .order('created_at', { ascending: false })
-            .limit(5);
-          
-          if (queryError) {
-            console.error('❌ Error querying reports:', queryError);
-          } else {
-            console.log('📊 Recent reports for this user:', allReports?.length || 0);
-            if (allReports && allReports.length > 0) {
-              console.log('📋 Reports:', JSON.stringify(allReports, null, 2));
-              const foundReport = allReports.find(r => r.report_id === data.report_id);
-              if (foundReport) {
-                console.log('✅ SOS report found in query results!');
-              } else {
-                console.warn('⚠️ SOS report NOT found in query results - may not be saved');
-              }
-            }
-          }
-        } catch (queryErr) {
-          console.error('❌ Error in query check:', queryErr);
-        }
-        
-        // Immediately refresh active case after successful SOS submission
-        console.log('🔄 Immediately refreshing active case after SOS submission...');
-        await checkActiveCase();
-        
-        // Refresh multiple times to ensure it's caught (database replication delay)
-        const refreshAttempts = [300, 600, 1000, 1500, 2000];
-        refreshAttempts.forEach((delay) => {
-          setTimeout(async () => {
-            console.log(`🔄 Refresh attempt after ${delay}ms...`);
-            await checkActiveCase();
-          }, delay);
-        });
-        
-        // Show success alert and navigate to Chat Screen
-        const reportIdForDisplay = data.report_id.substring(0, 8) + '...';
-        Alert.alert(
-          'SOS Sent Successfully',
-          `Your emergency SOS has been sent. Responders have been notified.\n\nReport ID: ${reportIdForDisplay}`,
-          [{ 
-            text: 'OK',
-            onPress: () => {
-              // Final refresh when user dismisses alert
-              console.log('🔄 Final refresh after alert dismissal...');
-              setTimeout(() => checkActiveCase(), 200);
-              // Navigate to Chat Screen with the new report_id
-              router.push({
-                pathname: '/screens/Home/ChatScreen',
-                params: { report_id: data.report_id },
-              });
-            }
-          }]
-        );
-        
-        // Log complete report data for debugging
-        console.log('='.repeat(50));
-        console.log('📋 COMPLETE REPORT DATA FOR DATABASE VERIFICATION:');
-        console.log('='.repeat(50));
-        console.log('Report ID:', data.report_id);
-        console.log('Reporter ID:', data.reporter_id);
-        console.log('Category:', data.category);
-        console.log('Status:', data.status);
-        console.log('Created At:', data.created_at);
-        console.log('Location:', data.location_city, data.location_barangay);
-        console.log('GPS:', data.latitude, data.longitude);
-        console.log('='.repeat(50));
-        console.log('💡 To verify in Supabase:');
-        console.log('1. Go to Table Editor → tbl_reports');
-        console.log('2. Search for report_id:', data.report_id);
-        console.log('3. Or filter by reporter_id:', data.reporter_id);
-        console.log('='.repeat(50));
       }
+
+      const reportId = data?.report_id;
+      const assignedOfficeId = data?.assigned_office_id;
+      const assignedOfficeName = data?.assigned_office_name;
+
+      if (!reportId) {
+        Alert.alert('Error', 'SOS created but no report_id returned.');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        return;
+      }
+
+      console.log('✅ SOS created via RPC:', { reportId, assignedOfficeId, assignedOfficeName });
+      if (assignedOfficeId) {
+        console.log(`📍 Assigned nearest office: ${assignedOfficeName || 'Unknown'} (${assignedOfficeId})`);
+      } else {
+        console.warn('⚠️ No assigned office returned from RPC');
+      }
+
+      // Immediately refresh active case after successful SOS submission
+      await checkActiveCase();
+
+      // Refresh a couple times to account for latency
+      [300, 800, 1500].forEach((delay) => {
+        setTimeout(async () => {
+          await checkActiveCase();
+        }, delay);
+      });
+
+      const reportIdForDisplay = `${reportId}`.substring(0, 8) + '...';
+      Alert.alert(
+        'SOS Sent Successfully',
+        `Your emergency SOS has been sent and assigned to ${assignedOfficeName || 'the nearest station'}.\n\nReport ID: ${reportIdForDisplay}`,
+        [{ 
+          text: 'OK',
+          onPress: () => {
+            setTimeout(() => checkActiveCase(), 200);
+            router.push({
+              pathname: '/screens/Home/ChatScreen',
+              params: { report_id: reportId },
+            });
+          }
+        }]
+      );
     } catch (error: any) {
       console.error('Error sending SOS:', error);
       Alert.alert(
@@ -948,11 +852,11 @@ const Home: React.FC = () => {
                     <Ionicons 
                       name={
                         selectedNotification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
-                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'ban-circle' :
+                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'close-circle' :
                         selectedNotification.status?.toLowerCase() === 'closed' ? 'close-circle' :
                         selectedNotification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
                         selectedNotification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
-                        'time-circle'
+                        'time'
                       } 
                       size={64} 
                       color={
@@ -1053,11 +957,11 @@ const Home: React.FC = () => {
                       <Ionicons 
                         name={
                           notification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
-                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? 'ban-circle' :
+                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? 'close-circle' :
                           notification.status?.toLowerCase() === 'closed' ? 'close-circle' :
                           notification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
                           notification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
-                          'time-circle'
+                          'time'
                         } 
                         size={24} 
                         color={

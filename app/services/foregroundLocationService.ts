@@ -1,4 +1,3 @@
-import notifee, { AndroidImportance } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
@@ -32,7 +31,6 @@ export interface ServiceStatus {
 class ForegroundLocationService {
   private locationSubscription: Location.LocationSubscription | null = null;
   private networkUnsubscribe: (() => void) | null = null;
-  private notificationId: string | null = null;
   private isServiceRunning = false;
   private isOnline = false;
   private lastLocation: LocationData | null = null;
@@ -44,8 +42,6 @@ class ForegroundLocationService {
   // Configuration
   private readonly LOCATION_UPDATE_INTERVAL = 5000; // 5 seconds
   private readonly LOCATION_ACCURACY = Location.Accuracy.Balanced;
-  private readonly NOTIFICATION_CHANNEL_ID = 'location-tracking';
-  private readonly NOTIFICATION_ID = 'foreground-location-service';
 
   /**
    * Initialize the service
@@ -63,24 +59,6 @@ class ForegroundLocationService {
         const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
         if (backgroundStatus !== 'granted') {
           console.warn('Background location permission not granted. Service will work in foreground only.');
-        }
-      }
-
-      // Create notification channel for Android
-      if (Platform.OS === 'android') {
-        try {
-          await notifee.createChannel({
-            id: this.NOTIFICATION_CHANNEL_ID,
-            name: 'Location Tracking',
-            description: 'AccessPoint is tracking your location for emergency services',
-            importance: AndroidImportance.HIGH, // HIGH to ensure it shows in tray
-            vibration: false,
-            sound: false,
-            showBadge: true,
-          });
-          console.log('✅ Notification channel created:', this.NOTIFICATION_CHANNEL_ID);
-        } catch (error) {
-          console.error('Error creating notification channel:', error);
         }
       }
 
@@ -109,9 +87,6 @@ class ForegroundLocationService {
       // Check network status
       const networkState = await NetInfo.fetch();
       this.isOnline = networkState.isConnected ?? false;
-
-      // Start foreground service notification
-      await this.startForegroundNotification();
 
       // Start location tracking
       await this.startLocationTracking();
@@ -146,12 +121,6 @@ class ForegroundLocationService {
         this.locationSubscription = null;
       }
 
-      // Stop foreground notification
-      if (this.notificationId) {
-        await notifee.stopForegroundService(this.notificationId);
-        this.notificationId = null;
-      }
-
       // Unsubscribe from network monitoring
       if (this.networkUnsubscribe) {
         this.networkUnsubscribe();
@@ -167,144 +136,6 @@ class ForegroundLocationService {
       console.error('Error stopping foreground service:', error);
       this.error = error.message || 'Error stopping service';
       this.notifyStatusChange();
-    }
-  }
-
-  /**
-   * Start foreground notification (required for Android foreground service)
-   */
-  private async startForegroundNotification(): Promise<void> {
-    if (Platform.OS !== 'android') {
-      return; // iOS doesn't require foreground notification
-    }
-
-    // CRITICAL: Request POST_NOTIFICATIONS permission (Android 13+ / SDK 33+)
-    try {
-      const settings = await notifee.getNotificationSettings();
-      console.log('📱 Notification settings:', settings);
-      
-      if (settings.authorizationStatus < 1) {
-        console.warn('⚠️ Notification permission not granted, requesting POST_NOTIFICATIONS...');
-        const permissionResult = await notifee.requestPermission({
-          sound: true,
-          alert: true,
-          badge: true,
-        });
-        console.log('📱 Permission request result:', permissionResult);
-        
-        if (permissionResult.authorizationStatus < 1) {
-          throw new Error('POST_NOTIFICATIONS permission denied. Please enable in Settings.');
-        }
-      } else {
-        console.log('✅ POST_NOTIFICATIONS permission already granted');
-      }
-    } catch (error) {
-      console.error('❌ Error with notification permission:', error);
-      throw error;
-    }
-
-    // CRITICAL: Ensure channel exists with EXACT matching ID
-    try {
-      const channelId = await notifee.createChannel({
-        id: this.NOTIFICATION_CHANNEL_ID, // Must match channelId in displayNotification
-        name: 'Location Tracking',
-        description: 'AccessPoint is tracking your location for emergency services',
-        importance: AndroidImportance.HIGH, // HIGH to ensure it shows in tray
-        vibration: false,
-        sound: false,
-        showBadge: true,
-      });
-      console.log('✅ Channel created/verified:', channelId, '(matches:', this.NOTIFICATION_CHANNEL_ID, ')');
-    } catch (error: any) {
-      console.warn('⚠️ Channel might already exist:', error.message);
-      // Channel exists is OK, continue
-    }
-
-    const networkStatus = this.isOnline ? 'Online' : 'Offline';
-    const locationStatus = this.lastLocation
-      ? `${this.lastLocation.latitude.toFixed(6)}, ${this.lastLocation.longitude.toFixed(6)}`
-      : 'Acquiring...';
-
-    try {
-      // CRITICAL: Display notification with EXACT channelId match
-      this.notificationId = await notifee.displayNotification({
-        id: this.NOTIFICATION_ID,
-        title: 'AccessPoint Location Tracking',
-        body: `${networkStatus} • ${locationStatus}`,
-        android: {
-          channelId: this.NOTIFICATION_CHANNEL_ID, // MUST match createChannel id exactly
-          importance: AndroidImportance.HIGH, // HIGH ensures it shows in tray
-          ongoing: true, // Makes it non-dismissible
-          autoCancel: false,
-          showTimestamp: true,
-          timestamp: Date.now(),
-          visibility: 1, // Public visibility (shows on lock screen)
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-          smallIcon: 'ic_launcher', // Use default app icon
-          progress: {
-            indeterminate: true,
-          },
-          showWhen: true, // Show timestamp
-        },
-      });
-
-      console.log('✅ Notification displayed with ID:', this.notificationId);
-
-      // Start foreground service (this keeps the notification visible)
-      await notifee.startForegroundService({
-        id: this.NOTIFICATION_ID,
-      });
-
-      console.log('✅ Foreground service started');
-    } catch (error: any) {
-      console.error('❌ Error starting foreground notification:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update the foreground notification with current status
-   */
-  private async updateForegroundNotification(): Promise<void> {
-    if (!this.notificationId || Platform.OS !== 'android') {
-      return;
-    }
-
-    const networkStatus = this.isOnline ? '🟢 Online' : '🔴 Offline';
-    const locationStatus = this.lastLocation
-      ? `📍 ${this.lastLocation.latitude.toFixed(6)}, ${this.lastLocation.longitude.toFixed(6)}`
-      : '📍 Acquiring location...';
-    const updateCount = `Updates: ${this.locationUpdateCount}`;
-
-    try {
-      await notifee.displayNotification({
-        id: this.NOTIFICATION_ID,
-        title: 'AccessPoint Location Tracking',
-        body: `${networkStatus} • ${locationStatus} • ${updateCount}`,
-        android: {
-          channelId: this.NOTIFICATION_CHANNEL_ID,
-          importance: AndroidImportance.HIGH, // HIGH ensures it shows in tray
-          ongoing: true,
-          autoCancel: false,
-          showTimestamp: true,
-          timestamp: Date.now(),
-          visibility: 1, // Public visibility (shows on lock screen)
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-          smallIcon: 'ic_launcher', // Use default app icon
-          progress: {
-            indeterminate: true,
-          },
-          showWhen: true, // Show timestamp
-        },
-      });
-    } catch (error) {
-      console.error('Error updating foreground notification:', error);
     }
   }
 
@@ -361,9 +192,6 @@ class ForegroundLocationService {
     // Store last location locally (offline-first)
     await this.storeLocationLocally(locationData);
 
-    // Update notification
-    await this.updateForegroundNotification();
-
     // Notify callbacks
     this.notifyLocationChange(locationData);
     this.notifyStatusChange();
@@ -411,7 +239,6 @@ class ForegroundLocationService {
       if (wasOnline !== this.isOnline) {
         console.log(`🌐 Network status changed: ${this.isOnline ? 'Online' : 'Offline'}`);
         this.notifyStatusChange();
-        this.updateForegroundNotification();
 
         // Handle network state change
         if (this.isOnline) {

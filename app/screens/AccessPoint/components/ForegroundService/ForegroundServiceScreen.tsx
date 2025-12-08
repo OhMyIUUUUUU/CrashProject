@@ -10,7 +10,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { testNotification } from '../../../../services/notificationTest';
 import { useForegroundLocationService } from '../../../../services/useForegroundLocationService';
 
 /**
@@ -136,17 +135,6 @@ export default function ForegroundServiceScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Controls</Text>
         
-        {/* SANITY CHECK: Test Notification Button */}
-        <TouchableOpacity
-          style={[styles.button, styles.buttonTest]}
-          onPress={async () => {
-            await testNotification();
-          }}
-        >
-          <Ionicons name="bug" size={24} color="#fff" />
-          <Text style={styles.buttonText}>🧪 Test Notification</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.button, isRunning ? styles.buttonStop : styles.buttonStart]}
           onPress={handleToggle}
@@ -179,7 +167,6 @@ export default function ForegroundServiceScreen() {
           • The service runs in the foreground, keeping the app alive even when locked{'\n'}
           • Location is tracked continuously and stored locally (offline-first){'\n'}
           • When online, locations are synced to the server{'\n'}
-          • A persistent notification shows the current status{'\n'}
           • Battery usage may increase while the service is active
         </Text>
       </View>
@@ -189,9 +176,8 @@ export default function ForegroundServiceScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Android Notes</Text>
           <Text style={styles.infoText}>
-            • A persistent notification will appear in your notification tray{'\n'}
-            • The notification cannot be dismissed while the service is running{'\n'}
-            • Battery optimization may need to be disabled for reliable tracking
+            • Battery optimization may need to be disabled for reliable tracking{'\n'}
+            • The service requires location permissions to function properly
           </Text>
         </View>
       )}
