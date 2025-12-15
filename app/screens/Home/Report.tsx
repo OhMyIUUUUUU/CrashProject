@@ -729,7 +729,7 @@ const Report: React.FC = () => {
         assigned_office_id: null,
         category: selectedCategory,
         description: description.trim(),
-        status: 'pending',
+        status: 'Pending',
         latitude: latitude,
         longitude: longitude,
         location_city: locationCity, // From GPS geocoding, fallback to user profile

@@ -5,15 +5,15 @@ import barangay from 'barangay';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, InteractionManager, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../../../contexts/AuthContext';
+import { ActivityIndicator, Alert, InteractionManager, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { StorageService, UserData } from '../../../../../utils/storage';
 import { ValidationRules } from '../../../../../utils/validation';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { supabase } from '../../../../lib/supabase';
 import AuthHeader from '../AuthHeader/AuthHeader';
 import DatePicker from '../DatePicker/DatePicker';
 import ErrorText from '../ErrorText/ErrorText';
 import InputField from '../InputField/InputField';
-import { supabase } from '../../../../lib/supabase';
 import LoaderOverlay from '../LoaderOverlay/LoaderOverlay';
 import PrimaryButton from '../PrimaryButton/PrimaryButton';
 import SearchablePicker from '../SearchablePicker/SearchablePicker';
@@ -822,28 +822,14 @@ const Register: React.FC = () => {
             <Text style={styles.otpEmail}>{verificationEmail}</Text>
 
             <View style={styles.otpInputContainer}>
-              {/* Hidden TextInput for actual input */}
-              <TextInput
-                ref={otpInputRef}
-                value={otpCode}
-                onChangeText={(text) => {
-                  // Only allow numbers and limit to 6 digits
-                  const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
-                  setOtpCode(numericText);
-                  setOtpError('');
-                }}
-                keyboardType="number-pad"
-                autoFocus={true}
-                maxLength={6}
-                style={styles.otpHiddenInput}
-                caretHidden={true}
-              />
-              
               {/* Visual display boxes */}
               <TouchableOpacity 
                 style={styles.otpDisplayContainer}
                 activeOpacity={1}
-                onPress={() => otpInputRef.current?.focus()}
+                onPress={() => {
+                  otpInputRef.current?.focus();
+                }}
+                accessible={false}
               >
                 {[0, 1, 2, 3, 4, 5].map((index) => {
                   const digit = otpCode[index] || '';
@@ -862,6 +848,27 @@ const Register: React.FC = () => {
                   );
                 })}
               </TouchableOpacity>
+              
+              {/* Hidden TextInput for actual input - positioned to overlay the display boxes */}
+              <TextInput
+                ref={otpInputRef}
+                value={otpCode}
+                onChangeText={(text) => {
+                  // Only allow numbers and limit to 6 digits
+                  const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
+                  setOtpCode(numericText);
+                  setOtpError('');
+                }}
+                keyboardType="number-pad"
+                autoFocus={true}
+                maxLength={6}
+                style={styles.otpHiddenInput}
+                caretHidden={true}
+                editable={true}
+                selectTextOnFocus={false}
+                autoCorrect={false}
+                autoComplete="off"
+              />
             </View>
 
             {otpError ? <Text style={styles.otpError}>{otpError}</Text> : null}

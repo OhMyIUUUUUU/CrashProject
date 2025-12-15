@@ -4,15 +4,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { StorageService, UserData } from '../../../../../utils/storage';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -86,16 +86,48 @@ import { styles } from './styles';
         }
 
         if (authData.session && authData.user) {
-          // Fetch user data from database
-          const { data: userData, error: dbError } = await supabase
-            .from('tbl_users')
-            .select('*')
-            .eq('email', email)
-            .single();
+          // Fetch user data from database - try both email and user_id
+          const userId = authData.user.id;
+          const userEmail = authData.user.email || email;
+          
+          // Try to fetch by user_id first, then by email
+          let userData = null;
+          let dbError = null;
+          
+          // Try by user_id
+          if (userId) {
+            const { data: userById, error: errorById } = await supabase
+              .from('tbl_users')
+              .select('*')
+              .eq('user_id', userId)
+              .maybeSingle();
+            
+            if (userById && !errorById) {
+              userData = userById;
+            } else {
+              dbError = errorById;
+            }
+          }
+          
+          // If not found by user_id, try by email
+          if (!userData && userEmail) {
+            const { data: userByEmail, error: errorByEmail } = await supabase
+              .from('tbl_users')
+              .select('*')
+              .eq('email', userEmail)
+              .maybeSingle();
+            
+            if (userByEmail && !errorByEmail) {
+              userData = userByEmail;
+              dbError = null;
+            } else if (!userData) {
+              dbError = errorByEmail;
+            }
+          }
 
-          if (dbError) {
+          // Only log non-"no rows found" errors
+          if (dbError && dbError.code !== 'PGRST116') {
             console.error('Error fetching user data:', dbError);
-            // Still proceed with login even if we can't fetch full profile
           }
 
           // Convert database user data to UserData format

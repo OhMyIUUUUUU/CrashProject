@@ -3,7 +3,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { reverseGeocode } from '../../../utils/geocoding';
 import { useAuth } from '../../contexts/AuthContext';
 import { ActiveCase, useActiveCase } from '../../hooks/useActiveCase';
@@ -33,6 +33,7 @@ const Home: React.FC = () => {
   const scrollViewRef = useRef<ScrollView>(null);
   const activeCaseRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRefreshingActiveCaseRef = useRef(false);
+  const preFetchedDataRef = useRef<{ userInfo: any; location: any } | null>(null);
   
   // Ripple animation for SOS button
   const rippleScale = useRef(new Animated.Value(0)).current;
@@ -228,11 +229,12 @@ const Home: React.FC = () => {
     };
   }, []);
 
-  const sendSOS = useCallback(async () => {
+  // Send SOS with pre-fetched data (called immediately after countdown)
+  const sendSOSWithPreFetchedData = useCallback(async (preFetched: { userInfo: any; location: any } | null) => {
     setSendingSOS(true);
 
     try {
-      // 1. Fetch User ID from Supabase session
+      // 1. Get session
       const { data: { session } } = await supabase.auth.getSession();
       const authUserId = session?.user?.id || null;
       const userEmail = session?.user?.email || null;
@@ -244,63 +246,117 @@ const Home: React.FC = () => {
         return;
       }
 
-      // 2. Parallel operations: Fetch User Info and GPS Location simultaneously
-      const [userInfoResult, locationResult] = await Promise.allSettled([
-        // Fetch User Info - try both queries in parallel for speed
-        Promise.race([
-          authUserId ? supabase
-            .from('tbl_users')
-            .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
-            .eq('user_id', authUserId)
-            .single() : Promise.resolve({ data: null, error: null }),
-          userEmail ? supabase
-            .from('tbl_users')
-            .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number, region, city, barangay')
-            .eq('email', userEmail)
-            .single() : Promise.resolve({ data: null, error: null })
-        ]).then(result => {
-          // Return first successful result
-          if (result.data && !result.error) return result;
-          return { data: null, error: null };
-        }),
-        // Fetch GPS Location with balanced accuracy for speed
-        (async () => {
+      // Use pre-fetched data if available, otherwise fetch now
+      let userInfo = preFetched?.userInfo;
+      let reporterId = null;
+      let latitude: number;
+      let longitude: number;
+
+      if (preFetched?.userInfo && preFetched?.location) {
+        // Use pre-fetched data - immediate!
+        userInfo = preFetched.userInfo;
+        reporterId = userInfo.user_id;
+        latitude = preFetched.location.latitude;
+        longitude = preFetched.location.longitude;
+      } else {
+        // Fallback: fetch data now (shouldn't happen if pre-fetch worked)
+        // Try cached user data first
+        if (user && user.email === userEmail) {
+          reporterId = authUserId;
+          userInfo = {
+            user_id: authUserId,
+            first_name: user.firstName,
+            last_name: user.lastName,
+            phone: user.phone,
+            email: user.email,
+            emergency_contact_name: user.emergencyContactName,
+            emergency_contact_number: user.emergencyContactNumber,
+          };
+        }
+
+        if (!userInfo) {
+          const [userInfoResult, locationResult] = await Promise.allSettled([
+            Promise.allSettled([
+              authUserId ? supabase
+                .from('tbl_users')
+                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+                .eq('user_id', authUserId)
+                .maybeSingle() : Promise.resolve({ data: null, error: null }),
+              userEmail ? supabase
+                .from('tbl_users')
+                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+                .eq('email', userEmail)
+                .maybeSingle() : Promise.resolve({ data: null, error: null })
+            ]).then(results => {
+              for (const result of results) {
+                if (result.status === 'fulfilled' && result.value?.data && !result.value?.error) {
+                  return result.value;
+                }
+              }
+              return { data: null, error: null };
+            }).catch(() => ({ data: null, error: null })),
+            (async () => {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              if (status !== 'granted') {
+                throw new Error('Location permission denied');
+              }
+              const currentLocation = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Low,
+              });
+              return {
+                latitude: currentLocation.coords.latitude,
+                longitude: currentLocation.coords.longitude,
+              };
+            })()
+          ]);
+
+          if (userInfoResult.status === 'fulfilled' && userInfoResult.value?.data) {
+            userInfo = userInfoResult.value.data;
+            reporterId = userInfo.user_id;
+          } else if (!userInfo) {
+            reporterId = authUserId;
+          }
+
+          if (locationResult.status === 'rejected') {
+            Alert.alert(
+              'Location Permission Required',
+              'Location permission is required to send SOS. Please enable it in settings.',
+              [{ text: 'OK' }]
+            );
+            setSendingSOS(false);
+            setSosCountdown(0);
+            return;
+          }
+
+          latitude = locationResult.value.latitude;
+          longitude = locationResult.value.longitude;
+        } else {
+          reporterId = userInfo.user_id;
+          // Still need to get location
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== 'granted') {
-            throw new Error('Location permission denied');
+            Alert.alert(
+              'Location Permission Required',
+              'Location permission is required to send SOS. Please enable it in settings.',
+              [{ text: 'OK' }]
+            );
+            setSendingSOS(false);
+            setSosCountdown(0);
+            return;
           }
-          // Use Balanced accuracy for faster GPS fix (faster than High)
           const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: Location.Accuracy.Low,
           });
-          return {
-            latitude: currentLocation.coords.latitude,
-            longitude: currentLocation.coords.longitude,
-          };
-        })()
-      ]);
-
-      // Extract user info
-      let userInfo = null;
-      let reporterId = null;
-      if (userInfoResult.status === 'fulfilled' && userInfoResult.value.data) {
-        userInfo = userInfoResult.value.data;
-        reporterId = userInfo.user_id;
+          latitude = currentLocation.coords.latitude;
+          longitude = currentLocation.coords.longitude;
+        }
       }
 
       if (!userInfo || !reporterId) {
-        console.error('[Home] Error fetching user info from database');
-        Alert.alert('Error', 'Unable to fetch user information from database. Please try again.');
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
-
-      // Extract location
-      if (locationResult.status === 'rejected') {
+        console.error('[Home] Error fetching user info from database - user not found or query failed');
         Alert.alert(
-          'Location Permission Required',
-          'Location permission is required to send SOS. Please enable it in settings.',
+          'Error', 
+          'Unable to fetch user information from database. Please make sure you are logged in and try again.',
           [{ text: 'OK' }]
         );
         setSendingSOS(false);
@@ -308,31 +364,13 @@ const Home: React.FC = () => {
         return;
       }
 
-      const { latitude, longitude } = locationResult.value;
-
-      // 3. Get current location city and barangay from GPS (reverse geocode)
-      // Run geocoding in parallel while preparing description
-      const geocodePromise = reverseGeocode(latitude, longitude).catch(() => ({
-        city: null,
-        barangay: null,
-        fullAddress: null
-      }));
-
-      // Create description with user info
+      // 2. Create minimal description first (geocoding happens after SOS is sent)
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
-      const locationAddress = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       
-      const description = `EMERGENCY SOS ALERT\n\n` +
-        `Reporter: ${userName}\n` +
-        `Phone: ${userInfo.phone || 'N/A'}\n` +
-        `Email: ${userInfo.email || 'N/A'}\n` +
-        `Emergency Contact: ${userInfo.emergency_contact_name || 'N/A'} (${userInfo.emergency_contact_number || 'N/A'})\n` +
-        `Location: ${locationAddress}\n` +
-        `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
-        `Role: Witness\n` +
-        `Time: ${new Date().toLocaleString()}`;
+      // Simplified description for faster sending
+      const description = `EMERGENCY SOS\nReporter: ${userName}\nPhone: ${userInfo.phone || 'N/A'}\nGPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\nTime: ${new Date().toLocaleString()}`;
 
-      // 4. Call RPC to create report immediately
+      // 3. Call RPC to create report immediately (don't wait for geocoding)
       const { data, error } = await supabase.rpc('create_emergency_sos', {
         p_user_id: reporterId,
         p_lat: latitude,
@@ -364,34 +402,46 @@ const Home: React.FC = () => {
         return;
       }
 
-      // 5. Update report with current location's city and barangay (from GPS, not profile)
-      // Get geocoded location and update report
-      geocodePromise.then(async (geocodeResult) => {
-        if (geocodeResult.city || geocodeResult.barangay) {
-          try {
-            const updateData: { location_city?: string; location_barangay?: string } = {};
-            if (geocodeResult.city) {
-              // Add "City" suffix to city name (e.g., "Manila" -> "Manila City")
-              const cityName = geocodeResult.city.trim();
-              updateData.location_city = cityName.endsWith(' City') ? cityName : `${cityName} City`;
-            }
-            if (geocodeResult.barangay) {
-              updateData.location_barangay = geocodeResult.barangay;
-            }
+      // 3. Update report with location details in background (non-blocking)
+      // Geocoding happens asynchronously after SOS is sent
+      reverseGeocode(latitude, longitude)
+        .then(async (geocodeResult) => {
+          if (geocodeResult.city || geocodeResult.barangay) {
+            try {
+              const updateData: { location_city?: string; location_barangay?: string; description?: string } = {};
+              if (geocodeResult.city) {
+                const cityName = geocodeResult.city.trim();
+                updateData.location_city = cityName.endsWith(' City') ? cityName : `${cityName} City`;
+              }
+              if (geocodeResult.barangay) {
+                updateData.location_barangay = geocodeResult.barangay;
+              }
+              
+              // Update description with full details
+              const fullDescription = `EMERGENCY SOS ALERT\n\n` +
+                `Reporter: ${userName}\n` +
+                `Phone: ${userInfo.phone || 'N/A'}\n` +
+                `Email: ${userInfo.email || 'N/A'}\n` +
+                `Emergency Contact: ${userInfo.emergency_contact_name || 'N/A'} (${userInfo.emergency_contact_number || 'N/A'})\n` +
+                `Location: ${geocodeResult.fullAddress || `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`}\n` +
+                `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
+                `Role: Witness\n` +
+                `Time: ${new Date().toLocaleString()}`;
+              updateData.description = fullDescription;
 
-            // Update the report with current GPS location's city and barangay
-            await supabase
-              .from('tbl_reports')
-              .update(updateData)
-              .eq('report_id', reportId);
-          } catch (updateError) {
-            // Silently fail - report is already created, location update is non-critical
-            console.error('[Home] Error updating report location:', updateError);
+              await supabase
+                .from('tbl_reports')
+                .update(updateData)
+                .eq('report_id', reportId);
+            } catch (updateError) {
+              // Silently fail - report is already created
+              console.error('[Home] Error updating report location:', updateError);
+            }
           }
-        }
-      }).catch(() => {
-        // Silently fail - geocoding failed but report is already created
-      });
+        })
+        .catch(() => {
+          // Silently fail - geocoding failed but report is already created
+        });
 
       // Refresh active case in background (don't wait)
       checkActiveCase().catch(() => {
@@ -425,11 +475,30 @@ const Home: React.FC = () => {
       setSendingSOS(false);
       setSosCountdown(0);
     }
-  }, [checkActiveCase]);
+  }, [checkActiveCase, user, router]);
+
+  // Original sendSOS function (for backward compatibility)
+  const sendSOS = useCallback(async () => {
+    // Call with null to fetch data now
+    await sendSOSWithPreFetchedData(null);
+  }, [sendSOSWithPreFetchedData]);
 
   const handleSOSPress = useCallback(async () => {
-    // Guard against race conditions - prevent multiple simultaneous SOS attempts
-    if (sendingSOS || sosCountdown > 0) {
+    // If countdown is active, allow canceling by tapping again
+    if (sosCountdown > 0) {
+      // Cancel countdown
+      if (sosCountdownIntervalRef.current) {
+        clearInterval(sosCountdownIntervalRef.current);
+        sosCountdownIntervalRef.current = null;
+      }
+      setSosCountdown(0);
+      setSendingSOS(false);
+      preFetchedDataRef.current = null;
+      return;
+    }
+    
+    // Guard against sending while already sending
+    if (sendingSOS) {
       return;
     }
     
@@ -444,7 +513,7 @@ const Home: React.FC = () => {
         .from('tbl_users')
         .select('user_id')
         .eq('user_id', authUserId)
-        .single();
+        .maybeSingle();
       if (userData) reporterId = userData.user_id;
     }
 
@@ -453,7 +522,7 @@ const Home: React.FC = () => {
         .from('tbl_users')
         .select('user_id')
         .eq('email', userEmail)
-        .single();
+        .maybeSingle();
       if (userData) reporterId = userData.user_id;
     }
 
@@ -469,9 +538,9 @@ const Home: React.FC = () => {
         .limit(1);
 
       const activeReports = reports?.filter(report => {
-        const status = report.status?.toLowerCase();
-        // Only show pending and responding cases (exclude resolved, closed, and cancelled)
-        return status === 'pending' || status === 'responding';
+        const status = report.status;
+        // Only show active cases: Pending, Acknowledged, En Route, On Scene
+        return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
       }) || [];
 
       if (activeReports.length > 0) {
@@ -486,8 +555,10 @@ const Home: React.FC = () => {
       const officeId = currentActiveCase.assigned_office_id;
       const officeName = (currentActiveCase as any).office_name;
       
-      const statusEmoji = currentActiveCase.status === 'pending' ? '🟠' : 
-                         currentActiveCase.status === 'responding' ? '🟢' : '🔵';
+      const statusEmoji = currentActiveCase.status === 'Pending' ? '🟠' : 
+                         currentActiveCase.status === 'Acknowledged' ? '🟡' :
+                         currentActiveCase.status === 'En Route' ? '🔵' :
+                         currentActiveCase.status === 'On Scene' ? '🟢' : '🔵';
       
       const caseInfo = `🚨 ACTIVE CASE DETECTED\n\n` +
         `${statusEmoji} Status: ${currentActiveCase.status.toUpperCase()}\n` +
@@ -533,7 +604,7 @@ const Home: React.FC = () => {
       );
       return; // Stop here - don't proceed with SOS
     }
-    // No active case - start countdown before sending SOS
+    // No active case - start countdown and pre-fetch data simultaneously
     
     // Start 5-second countdown
     setSosCountdown(5);
@@ -544,49 +615,111 @@ const Home: React.FC = () => {
       clearInterval(sosCountdownIntervalRef.current);
     }
 
-    // Show alert with countdown
-    Alert.alert(
-      'Sending SOS',
-      'Emergency SOS will be sent in 5 seconds. Tap Cancel to stop.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => {
-            // Cancel countdown
-            if (sosCountdownIntervalRef.current) {
-              clearInterval(sosCountdownIntervalRef.current);
-              sosCountdownIntervalRef.current = null;
-            }
-            setSosCountdown(0);
-            setSendingSOS(false);
-          },
-        },
-      ],
-      { cancelable: true, onDismiss: () => {
-        // Cancel countdown if alert is dismissed
-        if (sosCountdownIntervalRef.current) {
-          clearInterval(sosCountdownIntervalRef.current);
-          sosCountdownIntervalRef.current = null;
-        }
-        setSosCountdown(0);
-        setSendingSOS(false);
-      }}
-    );
+    // Pre-fetch data during countdown for immediate sending
+    const preFetchData = async () => {
+      try {
+        // Get session
+        const { data: { session } } = await supabase.auth.getSession();
+        const authUserId = session?.user?.id || null;
+        const userEmail = session?.user?.email || null;
 
-    // Start countdown
+        if (!authUserId && !userEmail) {
+          return { userInfo: null, location: null };
+        }
+
+        // Pre-fetch user info and location in parallel
+        const [userInfoResult, locationResult] = await Promise.allSettled([
+          // Try cached user first, then fetch if needed
+          user && user.email === userEmail ? Promise.resolve({ 
+            data: {
+              user_id: authUserId,
+              first_name: user.firstName,
+              last_name: user.lastName,
+              phone: user.phone,
+              email: user.email,
+              emergency_contact_name: user.emergencyContactName,
+              emergency_contact_number: user.emergencyContactNumber,
+            }, 
+            error: null 
+          }) :
+          Promise.allSettled([
+            authUserId ? supabase
+              .from('tbl_users')
+              .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+              .eq('user_id', authUserId)
+              .maybeSingle() : Promise.resolve({ data: null, error: null }),
+            userEmail ? supabase
+              .from('tbl_users')
+              .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+              .eq('email', userEmail)
+              .maybeSingle() : Promise.resolve({ data: null, error: null })
+          ]).then(results => {
+            for (const result of results) {
+              if (result.status === 'fulfilled' && result.value?.data && !result.value?.error) {
+                return result.value;
+              }
+            }
+            return { data: null, error: null };
+          }).catch(() => ({ data: null, error: null })),
+          // Pre-fetch location with LOW accuracy for speed
+          (async () => {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+              throw new Error('Location permission denied');
+            }
+            const currentLocation = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Low,
+            });
+            return {
+              latitude: currentLocation.coords.latitude,
+              longitude: currentLocation.coords.longitude,
+            };
+          })()
+        ]);
+
+        let userInfo = null;
+        if (userInfoResult.status === 'fulfilled' && userInfoResult.value?.data) {
+          userInfo = userInfoResult.value.data;
+        }
+
+        let location = null;
+        if (locationResult.status === 'fulfilled') {
+          location = locationResult.value;
+        }
+
+        return { userInfo, location };
+      } catch (error) {
+        console.error('[Home] Error pre-fetching data:', error);
+        return { userInfo: null, location: null };
+      }
+    };
+
+    // Start pre-fetching immediately (using preFetchedDataRef declared at component level)
+    preFetchData().then(data => {
+      preFetchedDataRef.current = data;
+    });
+
+    // Start countdown (user can cancel by tapping the button again)
     sosCountdownIntervalRef.current = setInterval(() => {
       setSosCountdown((prev) => {
         if (prev <= 1) {
-          // Countdown finished, send SOS
+          // Countdown finished, wait 2 seconds to ensure data accuracy
           if (sosCountdownIntervalRef.current) {
             clearInterval(sosCountdownIntervalRef.current);
             sosCountdownIntervalRef.current = null;
           }
           
-          // Send SOS
-          sendSOS();
-          return 0;
+          // Set countdown to show "Sending..." for 2 seconds
+          setSosCountdown(-1); // Use -1 to indicate "sending" state
+          
+          // Wait 2 seconds to ensure GPS and data are accurate, then send
+          setTimeout(() => {
+            sendSOSWithPreFetchedData(preFetchedDataRef.current).catch((error) => {
+              console.error('[Home] Error sending SOS with pre-fetched data:', error);
+            });
+          }, 2000);
+          
+          return -1; // Return -1 to show "Sending..." state
         }
         return prev - 1;
       });
@@ -692,7 +825,7 @@ const Home: React.FC = () => {
                 onPressIn={handleSOSPressIn}
                 onPressOut={handleSOSPressOut}
                 activeOpacity={1}
-                disabled={sendingSOS || sosCountdown > 0}
+                disabled={sendingSOS || sosCountdown > 0 || sosCountdown === -1}
                 style={[
                   styles.sosButtonNeumorphic,
                   {
@@ -719,24 +852,44 @@ const Home: React.FC = () => {
                           Cancel?
                         </Text>
                       </>
-                    ) : sendingSOS ? (
-                      <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.15 }]}>
-                        Sending...
-                      </Text>
-                    ) : (
+                    ) : sosCountdown === -1 ? (
                       <>
-                        <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
-                          SOS
-                        </Text>
-                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08 }]}>
-                          Emergency
+                        <ActivityIndicator size="large" color="#FFFFFF" />
+                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08, marginTop: 8 }]}>
+                          Sending...
                         </Text>
                       </>
+                    ) : (
+                      <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
+                        SOS
+                      </Text>
                     )}
                   </View>
                 </View>
               </TouchableOpacity>
             </Animated.View>
+            
+            {/* Cancel Panel - Shows during countdown */}
+            {sosCountdown > 0 && (
+              <View style={styles.cancelPanel}>
+                <Text style={styles.cancelPanelText}>Emergency SOS will be sent in {sosCountdown} seconds</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    // Cancel countdown
+                    if (sosCountdownIntervalRef.current) {
+                      clearInterval(sosCountdownIntervalRef.current);
+                      sosCountdownIntervalRef.current = null;
+                    }
+                    setSosCountdown(0);
+                    setSendingSOS(false);
+                    preFetchedDataRef.current = null;
+                  }}
+                  style={styles.cancelButton}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* Active Case Info or No Active Case Label */}
@@ -750,8 +903,10 @@ const Home: React.FC = () => {
                   <Ionicons name="alert-circle" size={24} color="#FF6B6B" />
                   <Text style={styles.activeCaseTitle}>Active Case</Text>
                   <View style={[styles.statusBadge, { 
-                    backgroundColor: activeCase.status === 'pending' ? '#FF9500' : 
-                                    activeCase.status === 'responding' ? '#34C759' : 
+                    backgroundColor: activeCase.status === 'Pending' ? '#FF9500' : 
+                                    activeCase.status === 'Acknowledged' ? '#FFCC00' :
+                                    activeCase.status === 'En Route' ? '#007AFF' :
+                                    activeCase.status === 'On Scene' ? '#34C759' : 
                                     '#007AFF' 
                   }]}>
                     <Text style={styles.statusText}>{activeCase.status.toUpperCase()}</Text>
@@ -885,29 +1040,29 @@ const Home: React.FC = () => {
                   <View style={styles.notificationMessageContainer}>
                     <Ionicons 
                       name={
-                        selectedNotification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
-                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'close-circle' :
-                        selectedNotification.status?.toLowerCase() === 'closed' ? 'close-circle' :
-                        selectedNotification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
-                        selectedNotification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
+                        selectedNotification.status === 'Resolved' ? 'checkmark-circle' :
+                        selectedNotification.status === 'Canceled' ? 'close-circle' :
+                        selectedNotification.status === 'Acknowledged' ? 'person-circle' :
+                        selectedNotification.status === 'En Route' ? 'car' :
+                        selectedNotification.status === 'On Scene' ? 'location' :
                         'time'
                       } 
                       size={64} 
                       color={
-                        selectedNotification.status?.toLowerCase() === 'resolved' ? '#34C759' :
-                        (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? '#FF3B30' :
-                        selectedNotification.status?.toLowerCase() === 'closed' ? '#999' :
-                        selectedNotification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
-                        selectedNotification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
+                        selectedNotification.status === 'Resolved' ? '#34C759' :
+                        selectedNotification.status === 'Canceled' ? '#FF3B30' :
+                        selectedNotification.status === 'Acknowledged' ? '#FFCC00' :
+                        selectedNotification.status === 'En Route' ? '#007AFF' :
+                        selectedNotification.status === 'On Scene' ? '#34C759' :
                         '#FF9500'
                       } 
                     />
                     <Text style={styles.notificationMessageText}>
-                      {selectedNotification.status?.toLowerCase() === 'resolved' ? 'Your case is already resolved' :
-                       (selectedNotification.status?.toLowerCase() === 'closed' && selectedNotification.remarks?.includes('Cancelled')) ? 'Your case has been cancelled' :
-                       selectedNotification.status?.toLowerCase() === 'closed' ? 'Your case is already closed' :
-                       selectedNotification.status?.toLowerCase() === 'investigating' ? 'Your case is under investigation' :
-                       selectedNotification.status?.toLowerCase() === 'assigned' ? 'Your case has been assigned' :
+                      {selectedNotification.status === 'Resolved' ? 'Your case is already resolved' :
+                       selectedNotification.status === 'Canceled' ? 'Your case has been cancelled' :
+                       selectedNotification.status === 'Acknowledged' ? 'Your case has been acknowledged' :
+                       selectedNotification.status === 'En Route' ? 'Help is on the way' :
+                       selectedNotification.status === 'On Scene' ? 'Officers are on scene' :
                        'Your case is pending'}
                     </Text>
                     <Text style={styles.notificationMessageSubtext}>
@@ -961,21 +1116,21 @@ const Home: React.FC = () => {
                         styles.notificationStatusIndicator,
                         {
                           backgroundColor: 
-                            notification.status?.toLowerCase() === 'resolved' ? '#34C759' :
-                            notification.status?.toLowerCase() === 'closed' ? '#999' :
-                            notification.status?.toLowerCase() === 'cancelled' ? '#FF3B30' :
-                            notification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
-                            notification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
-                            '#FF9500' // pending - orange
+                            notification.status === 'Resolved' ? '#34C759' :
+                            notification.status === 'Canceled' ? '#FF3B30' :
+                            notification.status === 'Acknowledged' ? '#FFCC00' :
+                            notification.status === 'En Route' ? '#007AFF' :
+                            notification.status === 'On Scene' ? '#34C759' :
+                            '#FF9500' // Pending - orange
                         }
                       ]} />
                       <View style={styles.notificationItemContent}>
                         <Text style={styles.notificationItemTitle}>
-                          {notification.status?.toLowerCase() === 'resolved' ? 'Case Resolved' :
-                           notification.status?.toLowerCase() === 'closed' ? 'Case Closed' :
-                           notification.status?.toLowerCase() === 'cancelled' ? 'Case Cancelled' :
-                           notification.status?.toLowerCase() === 'investigating' ? 'Case Under Investigation' :
-                           notification.status?.toLowerCase() === 'assigned' ? 'Case Assigned' :
+                          {notification.status === 'Resolved' ? 'Case Resolved' :
+                           notification.status === 'Canceled' ? 'Case Canceled' :
+                           notification.status === 'Acknowledged' ? 'Case Acknowledged' :
+                           notification.status === 'En Route' ? 'Help En Route' :
+                           notification.status === 'On Scene' ? 'Officers On Scene' :
                            'Case Pending'}
                         </Text>
                         <Text style={styles.notificationItemCategory}>{notification.category}</Text>
@@ -990,20 +1145,20 @@ const Home: React.FC = () => {
                       </View>
                       <Ionicons 
                         name={
-                          notification.status?.toLowerCase() === 'resolved' ? 'checkmark-circle' :
-                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? 'close-circle' :
-                          notification.status?.toLowerCase() === 'closed' ? 'close-circle' :
-                          notification.status?.toLowerCase() === 'investigating' ? 'search-circle' :
-                          notification.status?.toLowerCase() === 'assigned' ? 'person-circle' :
+                          notification.status === 'Resolved' ? 'checkmark-circle' :
+                          notification.status === 'Canceled' ? 'close-circle' :
+                          notification.status === 'Acknowledged' ? 'person-circle' :
+                          notification.status === 'En Route' ? 'car' :
+                          notification.status === 'On Scene' ? 'location' :
                           'time'
                         } 
                         size={24} 
                         color={
-                          notification.status?.toLowerCase() === 'resolved' ? '#34C759' :
-                          (notification.status?.toLowerCase() === 'closed' && notification.remarks?.includes('Cancelled')) ? '#FF3B30' :
-                          notification.status?.toLowerCase() === 'closed' ? '#999' :
-                          notification.status?.toLowerCase() === 'investigating' ? '#007AFF' :
-                          notification.status?.toLowerCase() === 'assigned' ? '#FF9500' :
+                          notification.status === 'Resolved' ? '#34C759' :
+                          notification.status === 'Canceled' ? '#FF3B30' :
+                          notification.status === 'Acknowledged' ? '#FFCC00' :
+                          notification.status === 'En Route' ? '#007AFF' :
+                          notification.status === 'On Scene' ? '#34C759' :
                           '#FF9500'
                         } 
                       />

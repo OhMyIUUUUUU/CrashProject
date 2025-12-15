@@ -21,6 +21,7 @@ interface Message {
   report_id: string;
   sender_id: string;
   sender_type: 'user' | 'police_office' | 'admin';
+  receiver_id: string | null;
   message_content: string;
   timestamp: string;
 }

@@ -10,6 +10,8 @@ export interface ActiveCase {
   status: string;
   latitude: number;
   longitude: number;
+  location_city?: string | null;
+  location_barangay?: string | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
@@ -43,7 +45,7 @@ export const useActiveCase = () => {
           .from('tbl_users')
           .select('user_id')
           .eq('user_id', authUserId)
-          .single();
+          .maybeSingle();
         if (userData) reporterId = userData.user_id;
       }
 
@@ -52,7 +54,7 @@ export const useActiveCase = () => {
           .from('tbl_users')
           .select('user_id')
           .eq('email', userEmail)
-          .single();
+          .maybeSingle();
         if (userData) reporterId = userData.user_id;
       }
 
@@ -75,6 +77,8 @@ export const useActiveCase = () => {
           status,
           latitude,
           longitude,
+          location_city,
+          location_barangay,
           remarks,
           created_at,
           updated_at
@@ -82,10 +86,10 @@ export const useActiveCase = () => {
         .eq('reporter_id', reporterId)
         .order('created_at', { ascending: false });
 
-      // Filter for active cases (exclude cancelled, resolved, and closed cases)
+      // Filter for active cases (Pending, Acknowledged, En Route, On Scene)
       const activeReports = reports?.filter(report => {
-        const status = report.status?.toLowerCase().trim();
-        return status === 'pending' || status === 'responding';
+        const status = report.status;
+        return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
       }) || [];
 
       if (error) {
@@ -127,7 +131,7 @@ export const useActiveCase = () => {
           .from('tbl_users')
           .select('user_id')
           .eq('user_id', authUserId)
-          .single();
+          .maybeSingle();
         if (userData) reporterId = userData.user_id;
       }
 
@@ -136,7 +140,7 @@ export const useActiveCase = () => {
           .from('tbl_users')
           .select('user_id')
           .eq('email', userEmail)
-          .single();
+          .maybeSingle();
         if (userData) reporterId = userData.user_id;
       }
 
@@ -145,7 +149,7 @@ export const useActiveCase = () => {
         return;
       }
 
-      // Fetch cases for notifications: pending, assigned, investigating, resolved, closed, and cancelled
+      // Fetch cases for notifications: Acknowledged, En Route, Resolved, On Scene, Canceled
       const { data: reports, error } = await supabase
         .from('tbl_reports')
         .select(`
@@ -157,12 +161,14 @@ export const useActiveCase = () => {
           status,
           latitude,
           longitude,
+          location_city,
+          location_barangay,
           remarks,
           created_at,
           updated_at
         `)
         .eq('reporter_id', reporterId)
-        .in('status', ['pending', 'assigned', 'investigating', 'resolved', 'closed'])
+        .in('status', ['Acknowledged', 'En Route', 'Resolved', 'On Scene', 'Canceled'])
         .order('updated_at', { ascending: false })
         .limit(20); // Get last 20 cases for notifications
 

@@ -49,11 +49,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .from('tbl_users')
           .select('*')
           .eq('user_id', authUserId)
-          .single();
+          .maybeSingle();
         
         if (data && !error) {
           userData = data;
-        } else if (error) {
+        } else if (error && error.code !== 'PGRST116') {
+          // Only log errors that aren't "no rows found"
           console.error('Error fetching user by user_id:', error);
         }
       }
@@ -64,11 +65,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .from('tbl_users')
           .select('*')
           .eq('email', userEmail)
-          .single();
+          .maybeSingle();
         
         if (data && !error) {
           userData = data;
-        } else if (error) {
+        } else if (error && error.code !== 'PGRST116') {
+          // Only log errors that aren't "no rows found"
           console.error('Error fetching user by email:', error);
         }
       }
@@ -96,15 +98,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsAuthenticated(true);
         console.log('✅ User data fetched from Supabase database');
       } else {
-        // No user data found in database
-        console.error('User not found in database');
+        // No user data found in database - sign out and redirect to login
+        console.log('User not found in database - signing out and redirecting to login');
         setUser(null);
         setIsAuthenticated(false);
+        
+        // Sign out from Supabase to clear invalid session
+        // This will trigger auth state change and redirect to login
+        // Only sign out if we have a session (to avoid unnecessary calls)
+        if (session) {
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.error('Error signing out:', signOutError);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error loading user from Supabase:', error);
       setUser(null);
       setIsAuthenticated(false);
+      
+      // Sign out from Supabase to clear invalid session if we have one
+      // This will trigger auth state change and redirect to login
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await supabase.auth.signOut();
+        }
+      } catch (signOutError) {
+        console.error('Error signing out:', signOutError);
+      }
     }
   }, []);
 

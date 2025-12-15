@@ -347,6 +347,47 @@ export const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  cancelPanel: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    alignItems: 'center',
+  },
+  cancelPanelText: {
+    color: '#666',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '500',
+  },
+  cancelButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cancelButtonText: {
+    color: '#333',
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
 
   // Activity
   activityCard: {
@@ -1254,11 +1295,6 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cancelButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#FF6B6B',
-  },
   saveButton: {
     backgroundColor: '#FF6B6B',
     shadowColor: '#FF3B30',
@@ -1417,12 +1453,6 @@ export const styles = StyleSheet.create({
     maxHeight: screenHeight * 0.75, // Allow up to 75% of screen height when expanded
     minHeight: 200, // Minimum height to ensure content is visible
   },
-  activeCaseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   minimizeButton: {
     padding: 8,
     borderRadius: 8,
@@ -1432,12 +1462,6 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  activeCaseTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1a1a1a',
-    letterSpacing: 0.3,
   },
   statusBadge: {
     paddingHorizontal: 12,

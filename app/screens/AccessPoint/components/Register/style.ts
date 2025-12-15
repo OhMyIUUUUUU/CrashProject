@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
   gradientContainer: {
@@ -144,10 +144,17 @@ export const styles = StyleSheet.create({
   },
   otpHiddenInput: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     opacity: 0,
-    width: 1,
-    height: 1,
-    zIndex: -1,
+    width: '100%',
+    height: '100%',
+    zIndex: 1,
+    color: 'transparent',
+    backgroundColor: 'transparent',
+    fontSize: 1,
   },
   otpDisplayContainer: {
     flexDirection: 'row',

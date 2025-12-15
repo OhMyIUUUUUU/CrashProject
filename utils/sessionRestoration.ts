@@ -44,7 +44,7 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
         .from('tbl_users')
         .select('user_id')
         .eq('user_id', authUserId)
-        .single();
+        .maybeSingle();
 
       if (userData && !userError) {
         reporterId = userData.user_id;
@@ -57,7 +57,7 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
         .from('tbl_users')
         .select('user_id')
         .eq('email', userEmail)
-        .single();
+        .maybeSingle();
 
       if (userData && !userError) {
         reporterId = userData.user_id;
@@ -84,10 +84,10 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
       return null;
     }
 
-    // Step 5: Filter for active reports (only 'pending' and 'responding' are active)
+    // Step 5: Filter for active reports (Pending, Acknowledged, En Route, On Scene)
     const activeReports = reports.filter(report => {
-      const status = report.status?.toLowerCase().trim();
-      return status === 'pending' || status === 'responding';
+      const status = report.status;
+      return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
     });
 
     // Step 6: Return the most recent active report
