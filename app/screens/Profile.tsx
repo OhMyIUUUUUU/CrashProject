@@ -4,12 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { StorageService } from '../../../utils/storage';
-import { useAuth } from '../../contexts/AuthContext';
-import { useActiveCase } from '../../hooks/useActiveCase';
-import { supabase } from '../../lib/supabase';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
-import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
+import CustomTabBar from '../components/Customtabbar/CustomTabBar';
+import { useAuth } from '../contexts/AuthContext';
+import { useActiveCase } from '../hooks/useActiveCase';
+import { supabase } from '../lib/supabase';
+import { StorageService } from '../utils/storage';
 import { styles } from './styles';
 
 interface UserProfileData {
@@ -42,7 +41,7 @@ const Profile: React.FC = () => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const isConnected = state.isConnected ?? false;
       if (!isConnected) {
-        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+        router.replace('/components/OfflineEmergency/OfflineEmergency');
       }
     });
 
@@ -273,7 +272,7 @@ const Profile: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             await logout();
-            router.replace('/screens/AccessPoint/components/Login/Login');
+            router.replace('/components/Login/Login');
           },
         },
       ]
@@ -584,18 +583,6 @@ const Profile: React.FC = () => {
         {/* Bottom Navigation */}
         <CustomTabBar />
 
-        {/* Floating Chat Head - Only show when active case exists */}
-        {activeCase && (
-          <FloatingChatHead
-            onPress={() => {
-              router.push({
-                pathname: '/screens/Home/ChatScreen',
-                params: { report_id: activeCase.report_id },
-              });
-            }}
-            unreadCount={0} // TODO: Calculate unread count from messages
-          />
-        )}
       </View>
     </LinearGradient>
   );

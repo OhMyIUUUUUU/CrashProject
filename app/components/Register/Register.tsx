@@ -6,10 +6,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, InteractionManager, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { StorageService, UserData } from '../../../../../utils/storage';
-import { ValidationRules } from '../../../../../utils/validation';
-import { useAuth } from '../../../../contexts/AuthContext';
-import { supabase } from '../../../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { StorageService, UserData } from '../../utils/storage';
+import { ValidationRules } from '../../utils/validation';
 import AuthHeader from '../AuthHeader/AuthHeader';
 import DatePicker from '../DatePicker/DatePicker';
 import ErrorText from '../ErrorText/ErrorText';
@@ -75,7 +75,7 @@ const Register: React.FC = () => {
     const unsubscribe = NetInfo.addEventListener(state => {
       if (!state.isConnected) {
         // If connection is lost, redirect to offline emergency screen
-        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+        router.replace('/components/OfflineEmergency/OfflineEmergency');
       }
     });
 
@@ -159,7 +159,7 @@ const Register: React.FC = () => {
     InteractionManager.runAfterInteractions(() => {
       requestAnimationFrame(() => {
         try {
-          router.replace('/screens/Home/Home');
+          router.replace('/screens/Home');
         } catch (error) {
           console.error('Navigation error:', error);
         }
@@ -545,7 +545,7 @@ const Register: React.FC = () => {
           region: formData.region || null,
           city: formData.city || null,
           barangay: formData.barangay || null,
-          created_at: new Date().toISOString(),
+          // created_at is handled by database DEFAULT NOW()
         });
 
       if (dbError) {

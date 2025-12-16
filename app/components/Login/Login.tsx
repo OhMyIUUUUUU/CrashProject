@@ -1,24 +1,24 @@
-  import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { styles } from '../../../../components/Login/styles';
-import { useAuth } from '../../../../contexts/AuthContext';
-import { supabase } from '../../../../lib/supabase';
-import { StorageService, UserData } from '../../../../utils/storage';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { StorageService, UserData } from '../../utils/storage';
+import { styles } from './styles';
 
   export default function Login() {
     const router = useRouter();

@@ -1,5 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
-import { supabase } from '../app/lib/supabase';
+import { supabase } from '../lib/supabase';
 
 export interface ActiveReport {
   report_id: string;
@@ -84,10 +84,11 @@ export const checkActiveReport = async (): Promise<ActiveReport | null> => {
       return null;
     }
 
-    // Step 5: Filter for active reports (Pending, Acknowledged, En Route, On Scene)
-    const activeReports = reports.filter(report => {
-      const status = report.status;
-      return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
+    // Step 5: Filter for active reports
+    // Treat everything except resolved/cancelled/closed as "active"
+    const activeReports = reports.filter((report: ActiveReport) => {
+      const status = (report.status || '').toString();
+      return status !== 'Resolved' && status !== 'Canceled' && status !== 'Cancelled' && status !== 'Closed';
     });
 
     // Step 6: Return the most recent active report

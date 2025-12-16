@@ -1,7 +1,7 @@
 import { Session } from '@supabase/supabase-js'
 import React, { useState } from 'react'
 import { Alert, Button, StyleSheet, Text, View } from 'react-native'
-import { supabase } from '../../../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 
 export default function Account({ session }: { session: Session }) {
   const [loading, setLoading] = useState(false)

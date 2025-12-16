@@ -4,12 +4,12 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { reverseGeocode } from '../../../utils/geocoding';
-import { useAuth } from '../../contexts/AuthContext';
-import { ActiveCase, useActiveCase } from '../../hooks/useActiveCase';
-import { supabase } from '../../lib/supabase';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
-import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
+import CustomTabBar from '../components/Customtabbar/CustomTabBar';
+import { useAuth } from '../contexts/AuthContext';
+import { ActiveCase, useActiveCase } from '../hooks/useActiveCase';
+import { supabase } from '../lib/supabase';
+import { reverseGeocode } from '../utils/geocoding';
+import { formatPhilippineDateTime, formatPhilippineDateTimeLong } from '../utils/philippineTime';
 import { styles } from './styles';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -45,7 +45,7 @@ const Home: React.FC = () => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const isConnected = state.isConnected ?? false;
       if (!isConnected) {
-        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+        router.replace('/components/OfflineEmergency/OfflineEmergency');
       }
     });
 
@@ -368,7 +368,7 @@ const Home: React.FC = () => {
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
       
       // Simplified description for faster sending
-      const description = `EMERGENCY SOS\nReporter: ${userName}\nPhone: ${userInfo.phone || 'N/A'}\nGPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\nTime: ${new Date().toLocaleString()}`;
+      const description = `EMERGENCY SOS\nReporter: ${userName}\nPhone: ${userInfo.phone || 'N/A'}\nGPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\nTime: ${formatPhilippineDateTimeLong(new Date())}`;
 
       // 3. Call RPC to create report immediately (don't wait for geocoding)
       const { data, error } = await supabase.rpc('create_emergency_sos', {
@@ -426,7 +426,7 @@ const Home: React.FC = () => {
                 `Location: ${geocodeResult.fullAddress || `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`}\n` +
                 `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
                 `Role: Witness\n` +
-                `Time: ${new Date().toLocaleString()}`;
+                `Time: ${formatPhilippineDateTimeLong(new Date())}`;
               updateData.description = fullDescription;
 
               await supabase
@@ -443,27 +443,32 @@ const Home: React.FC = () => {
           // Silently fail - geocoding failed but report is already created
         });
 
-      // Refresh active case in background (don't wait)
+      // Refresh active case so it appears in the UI (run in background, don't block UI)
       checkActiveCase().catch(() => {
-        // Silently fail - will retry on next check
+        // Silently fail - real-time subscription will update eventually
       });
 
       const reportIdForDisplay = `${reportId}`.substring(0, 8) + '...';
-      Alert.alert(
-        'SOS Sent Successfully',
-        `Your emergency SOS has been sent and assigned to ${assignedOfficeName || 'the nearest station'}.\n\nReport ID: ${reportIdForDisplay}`,
-        [{ 
-          text: 'OK',
-          onPress: () => {
-            // Navigate immediately, refresh in background
-            checkActiveCase().catch(() => {});
-            router.push({
-              pathname: '/screens/Home/ChatScreen',
-              params: { report_id: reportId },
-            });
-          }
-        }]
-      );
+      const caseInfo = `🚨 ACTIVE CASE CREATED\n\n` +
+        `🟠 Status: PENDING\n` +
+        `📁 Category: Emergency\n` +
+        `📅 Time: ${formatPhilippineDateTimeLong(new Date())}\n` +
+        `📍 GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
+        (assignedOfficeName ? `🏢 Office: ${assignedOfficeName}\n` : '🏢 Office: Assigning nearest station...\n') +
+        `\n🆔 Report ID: ${reportIdForDisplay}`;
+
+      // Show active case info, then automatically open chat after a short delay
+      Alert.alert('Active Case', caseInfo);
+
+      setTimeout(() => {
+        router.push({
+          pathname: '/screens/ChatScreen',
+          params: {
+            report_id: reportId,
+            office_name: assignedOfficeName || 'Police Station',
+          },
+        } as any);
+      }, 1500);
     } catch (error: any) {
       console.error('Error sending SOS:', error);
       Alert.alert(
@@ -476,12 +481,6 @@ const Home: React.FC = () => {
       setSosCountdown(0);
     }
   }, [checkActiveCase, user, router]);
-
-  // Original sendSOS function (for backward compatibility)
-  const sendSOS = useCallback(async () => {
-    // Call with null to fetch data now
-    await sendSOSWithPreFetchedData(null);
-  }, [sendSOSWithPreFetchedData]);
 
   const handleSOSPress = useCallback(async () => {
     // If countdown is active, allow canceling by tapping again
@@ -501,88 +500,31 @@ const Home: React.FC = () => {
     if (sendingSOS) {
       return;
     }
-    
-    // Check database directly for active case (fetch from database only)
-    const { data: { session } } = await supabase.auth.getSession();
-    const authUserId = session?.user?.id || null;
-    const userEmail = session?.user?.email || null;
 
-    let reporterId = null;
-    if (authUserId) {
-      const { data: userData } = await supabase
-        .from('tbl_users')
-        .select('user_id')
-        .eq('user_id', authUserId)
-        .maybeSingle();
-      if (userData) reporterId = userData.user_id;
-    }
-
-    if (!reporterId && userEmail) {
-      const { data: userData } = await supabase
-        .from('tbl_users')
-        .select('user_id')
-        .eq('email', userEmail)
-        .maybeSingle();
-      if (userData) reporterId = userData.user_id;
-    }
-
-    let currentActiveCase = activeCase; // Use current state first
-    
-    // If no activeCase in state, check database directly
-    if (!currentActiveCase && reporterId) {
-      const { data: reports } = await supabase
-        .from('tbl_reports')
-        .select('*')
-        .eq('reporter_id', reporterId)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      const activeReports = reports?.filter(report => {
-        const status = report.status;
-        // Only show active cases: Pending, Acknowledged, En Route, On Scene
-        return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
-      }) || [];
-
-      if (activeReports.length > 0) {
-        currentActiveCase = activeReports[0] as any;
-      }
-    }
-
-    // ALWAYS check for active case first - if exists, show it immediately
-    if (currentActiveCase && currentActiveCase.report_id) {
+    // If there is already an active case in state, show it instead of creating a new SOS
+    if (activeCase && activeCase.report_id) {
+      const officeName = activeCase.office_name;
+      const statusEmoji = activeCase.status === 'Pending' ? '🟠' : 
+                         activeCase.status === 'Acknowledged' ? '🟡' :
+                         activeCase.status === 'En Route' ? '🔵' :
+                         activeCase.status === 'On Scene' ? '🟢' : '🔵';
       
-      // Use assigned_office_id as office_id
-      const officeId = currentActiveCase.assigned_office_id;
-      const officeName = (currentActiveCase as any).office_name;
-      
-      const statusEmoji = currentActiveCase.status === 'Pending' ? '🟠' : 
-                         currentActiveCase.status === 'Acknowledged' ? '🟡' :
-                         currentActiveCase.status === 'En Route' ? '🔵' :
-                         currentActiveCase.status === 'On Scene' ? '🟢' : '🔵';
-      
+      const gpsLine = activeCase.latitude && activeCase.longitude
+        ? `📍 GPS: ${Number(activeCase.latitude).toFixed(6)}, ${Number(activeCase.longitude).toFixed(6)}\n`
+        : '';
+
       const caseInfo = `🚨 ACTIVE CASE DETECTED\n\n` +
-        `${statusEmoji} Status: ${currentActiveCase.status.toUpperCase()}\n` +
-        `📁 Category: ${currentActiveCase.category}\n` +
-        `📅 Created: ${new Date(currentActiveCase.created_at).toLocaleString()}\n` +
+        `${statusEmoji} Status: ${activeCase.status.toUpperCase()}\n` +
+        `📁 Category: ${activeCase.category}\n` +
+        `📅 Created: ${formatPhilippineDateTimeLong(activeCase.created_at)}\n` +
+        gpsLine +
         (officeName ? `🏢 Office: ${officeName}\n` : '🏢 Office: Not assigned yet\n') +
-        (currentActiveCase.description ? `\n📝 Description:\n${currentActiveCase.description.substring(0, 120)}${currentActiveCase.description.length > 120 ? '...' : ''}` : '');
-      
+        (activeCase.description ? `\n📝 Description:\n${activeCase.description.substring(0, 120)}${activeCase.description.length > 120 ? '...' : ''}` : '');
       
       Alert.alert(
         'Active Case',
         caseInfo,
         [
-          { 
-            text: '💬 Open Chat', 
-            onPress: () => {
-              if (activeCase) {
-                router.push({
-                  pathname: '/screens/Home/ChatScreen',
-                  params: { report_id: activeCase.report_id },
-                });
-              }
-            }
-          },
           { 
             text: '👁️ View Details', 
             onPress: () => {
@@ -592,7 +534,7 @@ const Home: React.FC = () => {
             }
           },
           { 
-            text: '🗑️ Cancel Report', 
+            text: '🗑️ Cancel Report',
             onPress: () => {
               handleCancelReport();
             }, 
@@ -608,14 +550,14 @@ const Home: React.FC = () => {
     
     // Start 5-second countdown
     setSosCountdown(5);
-    setSendingSOS(true);
+    // We'll only set sendingSOS to true once we actually start sending
 
     // Clear any existing interval
     if (sosCountdownIntervalRef.current) {
       clearInterval(sosCountdownIntervalRef.current);
     }
 
-    // Pre-fetch data during countdown for immediate sending
+    // Pre-fetch data during countdown for faster sending once timer ends
     const preFetchData = async () => {
       try {
         // Get session
@@ -703,30 +645,32 @@ const Home: React.FC = () => {
     sosCountdownIntervalRef.current = setInterval(() => {
       setSosCountdown((prev) => {
         if (prev <= 1) {
-          // Countdown finished, wait 2 seconds to ensure data accuracy
+          // Countdown finished - send SOS immediately
           if (sosCountdownIntervalRef.current) {
             clearInterval(sosCountdownIntervalRef.current);
             sosCountdownIntervalRef.current = null;
           }
-          
-          // Set countdown to show "Sending..." for 2 seconds
-          setSosCountdown(-1); // Use -1 to indicate "sending" state
-          
-          // Wait 2 seconds to ensure GPS and data are accurate, then send
-          setTimeout(() => {
-            sendSOSWithPreFetchedData(preFetchedDataRef.current).catch((error) => {
-              console.error('[Home] Error sending SOS with pre-fetched data:', error);
-            });
-          }, 2000);
-          
-          return -1; // Return -1 to show "Sending..." state
+
+          // Set countdown back to 0 and send SOS now using any pre-fetched data
+          // Button text will go back to "SOS" while we send in the background
+          // and we'll show the Active Case popup as soon as the report is created.
+          // (The button itself is disabled while sending via sendingSOS flag.)
+          // Note: sendSOSWithPreFetchedData internally sets sendingSOS=true.
+          setSosCountdown(0);
+
+          // Send SOS now using any pre-fetched data
+          sendSOSWithPreFetchedData(preFetchedDataRef.current).catch((error) => {
+            console.error('[Home] Error sending SOS with pre-fetched data:', error);
+          });
+
+          return 0;
         }
         return prev - 1;
       });
     }, 1000);
     
     return; // Stop here, countdown will trigger sendSOS
-  }, [sendingSOS, activeCase, handleCancelReport, checkActiveCase, sendSOS]);
+  }, [sosCountdown, sendingSOS, activeCase, handleCancelReport, user, sendSOSWithPreFetchedData]);
 
   // Show loading only briefly, then render even if user data is incomplete
   if (isLoading) {
@@ -819,13 +763,11 @@ const Home: React.FC = () => {
                 }}
               />
               <TouchableOpacity
-                onPress={() => {
-                  handleSOSPress();
-                }}
+                onPress={handleSOSPress}
                 onPressIn={handleSOSPressIn}
                 onPressOut={handleSOSPressOut}
                 activeOpacity={1}
-                disabled={sendingSOS || sosCountdown > 0 || sosCountdown === -1}
+                disabled={sendingSOS}
                 style={[
                   styles.sosButtonNeumorphic,
                   {
@@ -852,10 +794,15 @@ const Home: React.FC = () => {
                           Cancel?
                         </Text>
                       </>
-                    ) : sosCountdown === -1 ? (
+                    ) : sendingSOS ? (
                       <>
                         <ActivityIndicator size="large" color="#FFFFFF" />
-                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08, marginTop: 8 }]}>
+                        <Text
+                          style={[
+                            styles.sosButtonSubtext,
+                            { fontSize: buttonSize * 0.08, marginTop: 8 },
+                          ]}
+                        >
                           Sending...
                         </Text>
                       </>
@@ -917,10 +864,10 @@ const Home: React.FC = () => {
                   style={styles.minimizeButton}
                   activeOpacity={0.7}
                 >
-                  <Ionicons 
-                    name={isCaseMinimized ? "chevron-down" : "chevron-up"} 
-                    size={24} 
-                    color="#666" 
+                  <Ionicons
+                    name={isCaseMinimized ? "chevron-down" : "chevron-up"}
+                    size={20}
+                    color="#666"
                   />
                 </TouchableOpacity>
               </View>
@@ -941,12 +888,7 @@ const Home: React.FC = () => {
                     <Ionicons name="time" size={16} color="#666" />
                     <Text style={styles.caseDetailLabel}>Created:</Text>
                     <Text style={styles.caseDetailValue}>
-                      {new Date(activeCase.created_at).toLocaleString([], {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatPhilippineDateTime(activeCase.created_at)}
                     </Text>
                   </View>
                   
@@ -999,21 +941,28 @@ const Home: React.FC = () => {
           )}
         </ScrollView>
 
+        {/* Floating Chat Head - quick access to chat for active case */}
+        {activeCase && (
+          <TouchableOpacity
+            style={styles.floatingChatHead}
+            activeOpacity={0.8}
+            onPress={() => {
+              router.push({
+                pathname: '/screens/ChatScreen',
+                params: {
+                  report_id: activeCase.report_id,
+                  office_name: (activeCase as any).office_name || 'Police Station',
+                },
+              } as any);
+            }}
+          >
+            <Ionicons name="chatbubbles" size={26} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+
         {/* Bottom Navigation */}
         <CustomTabBar />
 
-        {/* Floating Chat Head - Only show when active case exists */}
-        {activeCase && (
-          <FloatingChatHead
-            onPress={() => {
-              router.push({
-                pathname: '/screens/Home/ChatScreen',
-                params: { report_id: activeCase.report_id },
-              });
-            }}
-            unreadCount={0} // TODO: Calculate unread count from messages
-          />
-        )}
 
 
         {/* Notification Detail Panel */}
@@ -1135,12 +1084,7 @@ const Home: React.FC = () => {
                         </Text>
                         <Text style={styles.notificationItemCategory}>{notification.category}</Text>
                         <Text style={styles.notificationItemTime}>
-                          {new Date(notification.updated_at).toLocaleString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                          {formatPhilippineDateTime(notification.updated_at)}
                         </Text>
                       </View>
                       <Ionicons 

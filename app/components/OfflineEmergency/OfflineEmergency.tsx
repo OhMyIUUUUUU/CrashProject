@@ -5,9 +5,9 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { reverseGeocode } from '../../../../../utils/geocoding';
-import { StorageService } from '../../../../../utils/storage';
-import { useAuth } from '../../../../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { reverseGeocode } from '../../utils/geocoding';
+import { StorageService } from '../../utils/storage';
 
 const { width: screenWidth } = Dimensions.get('window');
 const buttonSize = Math.min(screenWidth * 0.5, 200);
@@ -49,9 +49,9 @@ const OfflineEmergency: React.FC = () => {
         // If connection is restored, redirect based on auth status
         setTimeout(() => {
           if (user) {
-            router.replace('/screens/Home/Home');
+            router.replace('/screens/Home');
           } else {
-            router.replace('/screens/AccessPoint/components/Login/Login');
+            router.replace('/components/Login/Login');
           }
         }, 1000);
       }
@@ -330,7 +330,7 @@ CURRENT LOCATION:
 Latitude: ${latitude?.toFixed(8) || 'N/A'}
 Longitude: ${longitude?.toFixed(8) || 'N/A'}
 
-Time: ${new Date().toLocaleString()}
+Time: ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
 
 I need immediate assistance. Please help.`;
 
@@ -590,7 +590,7 @@ CURRENT LOCATION:
 Latitude: ${latitude?.toFixed(8) || 'N/A'}
 Longitude: ${longitude?.toFixed(8) || 'N/A'}
 
-Time: ${new Date().toLocaleString()}
+Time: ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
 
 Please help me immediately!`;
                       

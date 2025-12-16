@@ -2,9 +2,9 @@ import NetInfo from '@react-native-community/netinfo';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { ErrorInfo, ReactNode, useEffect, useRef } from 'react';
 import { LogBox, Text, View } from 'react-native';
+import { startPersistentNotification } from './components/Notifications/NotificationService';
 import { AuthProvider } from './contexts/AuthContext';
 import { supabase } from './lib/supabase';
-import { startPersistentNotification } from './screens/AccessPoint/components/Notifications/NotificationService';
 import { foregroundLocationService } from './services/foregroundLocationService';
 
 // Suppress keep-awake errors in LogBox (React Native's error overlay)
@@ -330,7 +330,7 @@ function RootLayoutContent() {
       
       if (!isConnected && !isOfflineScreen && !isSplashScreen && !isLoginScreen && !isNavigatingToOffline.current) {
         isNavigatingToOffline.current = true;
-        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+        router.replace('/components/OfflineEmergency/OfflineEmergency');
         // Reset flag after navigation
         setTimeout(() => {
           isNavigatingToOffline.current = false;
@@ -437,35 +437,35 @@ function RootLayoutContent() {
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/components/SplashScreen/SplashScreen" 
+          name="components/SplashScreen/SplashScreen" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/components/Login/Login" 
+          name="components/Login/Login" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/components/Register/Register" 
+          name="components/Register/Register" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/Home/Home" 
+          name="screens/Home" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/Home/Profile" 
+          name="screens/Profile" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/Home/Report" 
+          name="screens/Report" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/components/OfflineEmergency/OfflineEmergency" 
+          name="components/OfflineEmergency/OfflineEmergency" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="screens/AccessPoint/components/UserDataDemo/UserDataDemo" 
+          name="components/UserDataDemo/UserDataDemo" 
           options={{ headerShown: false }} 
         />
       </Stack>

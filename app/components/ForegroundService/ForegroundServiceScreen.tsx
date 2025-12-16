@@ -10,7 +10,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { useForegroundLocationService } from '../../../../services/useForegroundLocationService';
+import { useForegroundLocationService } from '../../services/useForegroundLocationService';
 
 /**
  * Foreground Service Control Screen
@@ -65,7 +65,7 @@ export default function ForegroundServiceScreen() {
   };
 
   const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString();
+    return new Date(timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
   };
 
   return (

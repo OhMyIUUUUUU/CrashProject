@@ -6,13 +6,12 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { reverseGeocode } from '../../../utils/geocoding';
-import { useActiveCase } from '../../hooks/useActiveCase';
-import { supabase } from '../../lib/supabase';
-import { ChatBox } from '../AccessPoint/components/ChatBox';
-import { FloatingChatHead } from '../AccessPoint/components/Chatsystem/FloatingChatHead';
-import CustomTabBar from '../AccessPoint/components/Customtabbar/CustomTabBar';
-import { HexagonalGrid } from '../AccessPoint/components/HexagonalGrid';
+import { ChatBox } from '../components/ChatBox';
+import CustomTabBar from '../components/Customtabbar/CustomTabBar';
+import { HexagonalGrid } from '../components/HexagonalGrid';
+import { useActiveCase } from '../hooks/useActiveCase';
+import { supabase } from '../lib/supabase';
+import { reverseGeocode } from '../utils/geocoding';
 import { styles } from './styles';
 
 // Lazy load ImagePicker to handle cases where native module isn't available
@@ -55,7 +54,7 @@ const Report: React.FC = () => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const isConnected = state.isConnected ?? false;
       if (!isConnected) {
-        router.replace('/screens/AccessPoint/components/OfflineEmergency/OfflineEmergency');
+        router.replace('/components/OfflineEmergency/OfflineEmergency');
       }
     });
 
@@ -469,30 +468,85 @@ const Report: React.FC = () => {
               }
               const byteArray = new Uint8Array(byteNumbers);
 
+              // Verify user is authenticated before upload
+              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+              if (!session || sessionError) {
+                console.error('❌ No active session:', sessionError);
+                Alert.alert(
+                  'Authentication Required',
+                  'Please log in to upload files.',
+                  [{ text: 'OK' }]
+                );
+                resolve(false);
+                return;
+              }
+
               // Upload to Supabase Storage using ArrayBuffer
               console.log(`📤 Uploading file to bucket '${bucketName}': ${filePath} (${byteArray.length} bytes)`);
+              console.log(`👤 Uploading as user: ${session.user.email || session.user.id}`);
+              
+              // Try to list buckets to verify, but don't block if it fails (permission issue)
+              // The upload will fail with a clearer error if bucket doesn't exist
+              const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+              if (bucketError) {
+                console.warn('⚠️ Could not list buckets (might be permission issue):', bucketError.message);
+                console.log('📝 Proceeding with upload attempt - will get clearer error if bucket missing');
+              } else {
+                const bucketExists = buckets?.some(b => b.name === bucketName);
+                if (!bucketExists) {
+                  const availableBuckets = buckets?.map(b => b.name).join(', ') || 'none';
+                  console.warn(`⚠️ Bucket "${bucketName}" not in list. Available: [${availableBuckets}]`);
+                  console.log('📝 This might be a permission issue. Attempting upload anyway...');
+                  // Don't block - try upload and let it fail with clearer error
+                } else {
+                  console.log(`✅ Bucket "${bucketName}" found and accessible`);
+                }
+              }
+
+              // Upload file
               const { data: uploadData, error: uploadError } = await supabase.storage
                 .from(bucketName)
                 .upload(filePath, byteArray, {
                   contentType: contentType,
-                  upsert: false,
+                  upsert: true, // Allow overwriting if file exists
+                  cacheControl: '3600',
                 });
 
               if (uploadError) {
                 console.error('❌ Upload error:', uploadError);
                 console.error('Upload error details:', JSON.stringify(uploadError, null, 2));
+                console.error('Error name:', uploadError.name);
+                console.error('Error message:', uploadError.message);
+                
+                // More detailed error messages
+                let errorMessage = 'Unknown error occurred';
+                if (uploadError.message) {
+                  errorMessage = uploadError.message;
+                } else if (uploadError.name === 'StorageUnknownError') {
+                  errorMessage = 'Storage service error. Please check:\n1. Bucket exists and is accessible\n2. RLS policies allow uploads\n3. File size is within limits\n4. Network connection is stable';
+                }
                 
                 // Check if it's a bucket not found error
-                if (uploadError.message?.includes('Bucket not found') || (uploadError as any).statusCode === 404) {
+                if (uploadError.message?.includes('Bucket not found') || 
+                    uploadError.message?.includes('not found') ||
+                    (uploadError as any).statusCode === 404) {
                   Alert.alert(
                     'Bucket Not Found',
                     `The storage bucket "${bucketName}" was not found.\n\nPlease verify:\n1. The bucket name is exactly "${bucketName}"\n2. The bucket exists in your Supabase Storage\n3. The bucket is accessible`,
                     [{ text: 'OK' }]
                   );
+                } else if (uploadError.message?.includes('new row violates row-level security') ||
+                          uploadError.message?.includes('RLS') ||
+                          uploadError.message?.includes('permission denied')) {
+                  Alert.alert(
+                    'Permission Denied',
+                    `Upload failed due to permissions.\n\nPlease check:\n1. RLS policies allow INSERT for authenticated users\n2. Bucket is set to public or has proper policies\n3. You are logged in`,
+                    [{ text: 'OK' }]
+                  );
                 } else {
                   Alert.alert(
                     'Upload Failed',
-                    `Failed to upload file: ${uploadError.message || 'Unknown error'}`,
+                    `Failed to upload file: ${errorMessage}`,
                     [{ text: 'OK' }]
                   );
                 }
@@ -516,7 +570,7 @@ const Report: React.FC = () => {
                 file_url: fileUrl,
                 file_type: isVideo ? 'video' : 'image',
                 sender_id: senderId,
-                uploaded_at: new Date().toISOString(),
+                // uploaded_at is handled by database DEFAULT CURRENT_TIMESTAMP
               };
 
               console.log('💾 Saving media record to tbl_media:', mediaRecord);
@@ -692,7 +746,6 @@ const Report: React.FC = () => {
       }
 
       const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
-      const now = new Date().toISOString();
 
       // 3. Fetch GPS Location and reverse geocode
       let latitude: number | null = null;
@@ -712,7 +765,9 @@ const Report: React.FC = () => {
            // Reverse geocode to get city and barangay from GPS coordinates ONLY
            if (latitude && longitude) {
              const geocodeResult = await reverseGeocode(latitude, longitude);
-             locationCity = geocodeResult.city || null; // Only from GPS, no profile fallback
+             // Add "City" suffix if not already present
+             const cityName = geocodeResult.city || null;
+             locationCity = cityName ? (cityName.endsWith(' City') ? cityName : `${cityName} City`) : null;
              locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
            }
         } else {
@@ -735,8 +790,8 @@ const Report: React.FC = () => {
         location_city: locationCity, // From GPS geocoding, fallback to user profile
         location_barangay: locationBarangay, // From GPS geocoding, fallback to user profile
         remarks: `Report submitted via mobile app. Role: ${role.charAt(0).toUpperCase() + role.slice(1)}. User: ${userName}`,
-        created_at: now,
-        updated_at: now,
+        // created_at is handled by database DEFAULT NOW()
+        // updated_at is handled by database trigger
       };
 
       // 5. Insert report into database
@@ -809,7 +864,7 @@ const Report: React.FC = () => {
       );
 
       // Automatically navigate to Home screen immediately
-      router.replace('/screens/Home/Home');
+      router.replace('/screens/Home');
     } catch (error: any) {
       console.error('Error submitting report:', error);
       Alert.alert(
@@ -1100,18 +1155,6 @@ const Report: React.FC = () => {
         {/* Bottom Navigation */}
         <CustomTabBar />
 
-        {/* Floating Chat Head - Only show when active case exists */}
-        {activeCase && (
-          <FloatingChatHead
-            onPress={() => {
-              router.push({
-                pathname: '/screens/Home/ChatScreen',
-                params: { report_id: activeCase.report_id },
-              });
-            }}
-            unreadCount={0} // TODO: Calculate unread count from messages
-          />
-        )}
       </View>
     </LinearGradient>
   );

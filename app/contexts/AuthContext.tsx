@@ -1,6 +1,6 @@
 import React, { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
-import { StorageService, UserData } from '../../utils/storage';
 import { supabase } from '../lib/supabase';
+import { StorageService, UserData } from '../utils/storage';
 
 interface AuthContextType {
   user: UserData | null;

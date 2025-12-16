@@ -1454,9 +1454,11 @@ export const styles = StyleSheet.create({
     minHeight: 200, // Minimum height to ensure content is visible
   },
   minimizeButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+  paddingHorizontal: 10,
+  paddingVertical: 10,
+  borderRadius: 10,
+  backgroundColor: '#F5F5F5',
+  marginLeft: 5,
   },
   activeCaseTitleRow: {
     flexDirection: 'row',

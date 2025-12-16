@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-const supabaseUrl = 'https://phawtlidroatfpzboxhi.supabase.co'
-const supabasePublishableKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoYXd0bGlkcm9hdGZwemJveGhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMTAzNDcsImV4cCI6MjA3ODg4NjM0N30.DXnEZatmlNLBh2YVnKGMyw4s5r34lhkFWioZupRQNAQ'
+const supabaseUrl = 'https://hlkjnvovfhxwhjseeokx.supabase.co'
+const supabasePublishableKey = 'sb_publishable_LpWHpHLtoeE8vtJkw4oAtw_oD2FW5_l'
 
 // Create a storage adapter that uses AsyncStorage but handles errors gracefully
 // We'll use a factory function that loads AsyncStorage only when actually needed

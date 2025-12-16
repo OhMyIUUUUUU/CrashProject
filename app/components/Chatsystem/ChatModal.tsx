@@ -12,10 +12,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ActiveCase } from '../../../../hooks/useActiveCase';
-import { supabase } from '../../../../lib/supabase';
-import { formatPhilippineTimeOnly } from '../../../../utils/philippineTime';
-import { styles } from '../../../styles';
+import { ActiveCase } from '../../hooks/useActiveCase';
+import { supabase } from '../../lib/supabase';
+import { styles } from '../../screens/styles';
+import { formatPhilippineTimeOnly } from '../../utils/philippineTime';
 
 interface Message {
   message_id: string;

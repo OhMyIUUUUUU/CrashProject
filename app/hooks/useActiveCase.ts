@@ -65,7 +65,7 @@ export const useActiveCase = () => {
       }
 
       // Check for active cases from tbl_reports
-      // Only show pending and responding cases (resolved/closed cases go to notifications)
+      // Treat everything except resolved/cancelled/closed as "active"
       const { data: reports, error } = await supabase
         .from('tbl_reports')
         .select(`
@@ -86,10 +86,10 @@ export const useActiveCase = () => {
         .eq('reporter_id', reporterId)
         .order('created_at', { ascending: false });
 
-      // Filter for active cases (Pending, Acknowledged, En Route, On Scene)
+      // Filter for active cases
       const activeReports = reports?.filter(report => {
-        const status = report.status;
-        return status === 'Pending' || status === 'Acknowledged' || status === 'En Route' || status === 'On Scene';
+        const status = (report.status || '').toString();
+        return status !== 'Resolved' && status !== 'Canceled' && status !== 'Cancelled' && status !== 'Closed';
       }) || [];
 
       if (error) {

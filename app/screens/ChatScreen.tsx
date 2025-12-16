@@ -2,25 +2,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    StatusBar,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { formatPhilippineTimeOnly } from '../utils/philippineTime';
 
 interface Message {
   message_id: string;
   report_id: string;
   sender_id: string;
-  sender_type: 'user' | 'police_office' | 'admin';
+  sender_type: 'user' | 'police';
   receiver_id: string | null;
   message_content: string;
   timestamp: string;
@@ -28,7 +29,7 @@ interface Message {
 
 const ChatScreen: React.FC = () => {
   const router = useRouter();
-  const { report_id } = useLocalSearchParams<{ report_id: string }>();
+  const { report_id, office_name } = useLocalSearchParams<{ report_id: string; office_name?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -36,6 +37,10 @@ const ChatScreen: React.FC = () => {
   const flatListRef = useRef<FlatList>(null);
   const channelRef = useRef<any>(null);
   const receiverIdRef = useRef<string | null>(null);
+
+  const officeTitle = Array.isArray(office_name)
+    ? office_name[0]
+    : office_name || 'Police Station';
 
   useEffect(() => {
     if (report_id) {
@@ -183,7 +188,7 @@ const ChatScreen: React.FC = () => {
             sender_type: 'user',
             receiver_id: receiverId,
             message_content: messageText,
-            timestamp: new Date().toISOString(),
+            // timestamp is handled by database DEFAULT CURRENT_TIMESTAMP
           },
         ])
         .select()
@@ -212,10 +217,7 @@ const ChatScreen: React.FC = () => {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.sender_type === 'user';
-    const messageTime = new Date(item.timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const messageTime = formatPhilippineTimeOnly(item.timestamp);
 
     return (
       <View
@@ -385,13 +387,16 @@ const ChatScreen: React.FC = () => {
                 <Ionicons name="chatbubbles" size={22} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{
-                  fontSize: 18,
-                  fontWeight: '700',
-                  color: '#FFFFFF',
-                  marginBottom: 2,
-                }}>
-                  Police Station
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: '700',
+                    color: '#FFFFFF',
+                    marginBottom: 2,
+                  }}
+                  numberOfLines={1}
+                >
+                  {officeTitle}
                 </Text>
                 <Text style={{
                   fontSize: 13,
