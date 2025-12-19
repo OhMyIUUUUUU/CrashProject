@@ -1,11 +1,23 @@
 import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { ErrorInfo, ReactNode, useEffect, useRef } from 'react';
 import { LogBox, Text, View } from 'react-native';
-import { startPersistentNotification } from './components/Notifications/NotificationService';
+import { getFCMToken, showMessageNotification, startPersistentNotification } from './components/Notifications/NotificationService';
 import { AuthProvider } from './contexts/AuthContext';
 import { supabase } from './lib/supabase';
 import { foregroundLocationService } from './services/foregroundLocationService';
+
+// Configure foreground notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 // Suppress keep-awake errors in LogBox (React Native's error overlay)
 if (LogBox) {
@@ -28,7 +40,7 @@ if (typeof console !== 'undefined' && console.error) {
   const originalConsoleError = console.error.bind(console);
   // Store reference for potential restoration
   (console as any).__originalError = originalConsoleError;
-  
+
   console.error = (...args: any[]) => {
     try {
       // Convert all args to string and combine, handling Error objects, arrays, and nested structures
@@ -52,31 +64,31 @@ if (typeof console !== 'undefined' && console.error) {
           return String(arg).toLowerCase();
         }
       }).join(' ').toLowerCase();
-      
+
       // Suppress keep-awake errors (including expo-modules-core format and "in promise" format)
       // Check for various formats including "[Error: Uncaught (in promise, id: X) Error: Unable to activate keep awake]"
-      if (errorString.includes('keep awake') || 
-          errorString.includes('keep-awake') ||
-          errorString.includes('keepawake') ||
-          errorString.includes('unable to activate keep awake') ||
-          errorString.includes('activate keep awake') ||
-          errorString.includes('unable to activate') && errorString.includes('keep') ||
-          (errorString.includes('uncaught') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
-          (errorString.includes('in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
-          (errorString.includes('uncaught (in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
-          (errorString.includes('expo-modules-core') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
-          (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
-          (errorString.includes('[error:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake')))) {
+      if (errorString.includes('keep awake') ||
+        errorString.includes('keep-awake') ||
+        errorString.includes('keepawake') ||
+        errorString.includes('unable to activate keep awake') ||
+        errorString.includes('activate keep awake') ||
+        errorString.includes('unable to activate') && errorString.includes('keep') ||
+        (errorString.includes('uncaught') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+        (errorString.includes('in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+        (errorString.includes('uncaught (in promise') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+        (errorString.includes('expo-modules-core') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+        (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake'))) ||
+        (errorString.includes('[error:') && (errorString.includes('keep awake') || errorString.includes('keep-awake') || errorString.includes('keepawake')))) {
         return; // Suppress - don't log
       }
-      
+
       // Suppress network errors
       if (errorString.includes('network request failed') ||
-          errorString.includes('networkerror') ||
-          errorString.includes('failed to fetch')) {
+        errorString.includes('networkerror') ||
+        errorString.includes('failed to fetch')) {
         return; // Suppress
       }
-      
+
       originalConsoleError(...args);
     } catch {
       originalConsoleError(...args);
@@ -98,26 +110,26 @@ function RootLayoutContent() {
     // Helper function to check if error is keep-awake related
     const isKeepAwakeError = (error: any): boolean => {
       if (!error) return false;
-      
+
       // Get error message from various possible locations
       const errorMessage = error?.message || error?.reason?.message || error?.toString() || String(error) || '';
       const errorString = errorMessage.toLowerCase();
       const errorStack = error?.stack?.toLowerCase() || error?.reason?.stack?.toLowerCase() || '';
       const errorName = error?.name?.toLowerCase() || error?.reason?.name?.toLowerCase() || '';
       const errorCode = error?.code?.toLowerCase() || error?.reason?.code?.toLowerCase() || '';
-      
+
       // Check nested error if present
       const nestedError = error?.reason || error?.error;
       const nestedErrorString = nestedError ? (nestedError?.message || nestedError?.toString() || String(nestedError) || '').toLowerCase() : '';
-      
+
       // Combine all error strings for comprehensive checking
       const allErrorText = (errorString + ' ' + nestedErrorString + ' ' + errorStack + ' ' + errorName + ' ' + errorCode).toLowerCase();
-      
+
       // Check for keep-awake errors in various formats
       // Including "Uncaught (in promise, id: X) Error: Unable to activate keep awake"
       return (
-        errorString.includes('keep awake') || 
-        errorString.includes('keep-awake') || 
+        errorString.includes('keep awake') ||
+        errorString.includes('keep-awake') ||
         errorString.includes('unable to activate keep awake') ||
         errorString.includes('activate keep awake') ||
         errorString.includes('keepawake') ||
@@ -165,7 +177,7 @@ function RootLayoutContent() {
     // Handle unhandled promise rejections (e.g., expo-keep-awake errors, network errors)
     const handleUnhandledRejection = (event: any) => {
       const error = event?.reason || event;
-      
+
       // Suppress expo-keep-awake errors as they're typically harmless
       if (isKeepAwakeError(error)) {
         // Silently suppress - don't even log to avoid console noise
@@ -177,7 +189,7 @@ function RootLayoutContent() {
         }
         return;
       }
-      
+
       // Suppress network errors (expected in offline mode)
       if (isNetworkError(error)) {
         // Silently suppress - network errors are expected when offline
@@ -189,7 +201,7 @@ function RootLayoutContent() {
         }
         return;
       }
-      
+
       // Log other unhandled rejections for debugging
       console.error('Unhandled promise rejection:', error);
     };
@@ -212,13 +224,13 @@ function RootLayoutContent() {
         // Silently suppress - don't log, don't call original handler
         return;
       }
-      
+
       // Suppress network errors (expected in offline mode)
       if (isNetworkError(error)) {
         // Silently suppress - network errors are expected when offline
         return;
       }
-      
+
       // Call original handler for other errors
       if (originalRejectionHandler) {
         originalRejectionHandler(id, error);
@@ -232,7 +244,7 @@ function RootLayoutContent() {
     const originalRNLog = (global as any).__fbBatchedBridge?.callNative;
     if ((global as any).__fbBatchedBridge) {
       const originalCallNative = (global as any).__fbBatchedBridge.callNative;
-      (global as any).__fbBatchedBridge.callNative = function(module: string, method: string, args: any[]) {
+      (global as any).__fbBatchedBridge.callNative = function (module: string, method: string, args: any[]) {
         // Intercept console.error calls
         if (module === 'RCTLog' && method === 'logIfNoNativeHook') {
           const logLevel = args?.[0];
@@ -241,21 +253,21 @@ function RootLayoutContent() {
           if (logLevel === 'error' && typeof message === 'string') {
             const msgLower = message.toLowerCase();
             // Check for keep-awake errors in various formats
-            if (msgLower.includes('keep awake') || 
-                msgLower.includes('keep-awake') ||
-                msgLower.includes('keepawake') ||
-                msgLower.includes('unable to activate keep awake') ||
-                msgLower.includes('activate keep awake') ||
-                msgLower.includes('unable to activate') && msgLower.includes('keep') ||
-                (msgLower.includes('uncaught') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                (msgLower.includes('in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                (msgLower.includes('uncaught (in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                (msgLower.includes('id:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                (msgLower.includes('[error:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                (msgLower.includes('expo-modules-core') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
-                msgLower.includes('network request failed') ||
-                msgLower.includes('networkerror') ||
-                msgLower.includes('failed to fetch')) {
+            if (msgLower.includes('keep awake') ||
+              msgLower.includes('keep-awake') ||
+              msgLower.includes('keepawake') ||
+              msgLower.includes('unable to activate keep awake') ||
+              msgLower.includes('activate keep awake') ||
+              msgLower.includes('unable to activate') && msgLower.includes('keep') ||
+              (msgLower.includes('uncaught') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              (msgLower.includes('in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              (msgLower.includes('uncaught (in promise') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              (msgLower.includes('id:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              (msgLower.includes('[error:') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              (msgLower.includes('expo-modules-core') && (msgLower.includes('keep awake') || msgLower.includes('keep-awake') || msgLower.includes('keepawake'))) ||
+              msgLower.includes('network request failed') ||
+              msgLower.includes('networkerror') ||
+              msgLower.includes('failed to fetch')) {
               return; // Don't log this error
             }
           }
@@ -274,13 +286,13 @@ function RootLayoutContent() {
           // Silently suppress
           return;
         }
-        
+
         // Suppress network errors (expected in offline mode)
         if (isNetworkError(error)) {
           // Silently suppress
           return;
         }
-        
+
         // Call original handler for other errors
         if (originalErrorHandler) {
           originalErrorHandler(error, isFatal);
@@ -295,20 +307,20 @@ function RootLayoutContent() {
     if (!originalConsoleErrorRef.current) {
       originalConsoleErrorRef.current = (console as any).__originalError || console.error.bind(console);
     }
-    
+
     // Also override console.warn to catch keep-awake warnings and network errors
     const originalConsoleWarn = console.warn.bind(console);
     console.warn = (...args: any[]) => {
       try {
         const errorString = args.map(arg => String(arg)).join(' ').toLowerCase();
-        if (errorString.includes('keep awake') || 
-            errorString.includes('keep-awake') ||
-            errorString.includes('keepawake') ||
-            errorString.includes('unable to activate keep awake') ||
-            (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
-            errorString.includes('network request failed') ||
-            errorString.includes('networkerror') ||
-            errorString.includes('failed to fetch')) {
+        if (errorString.includes('keep awake') ||
+          errorString.includes('keep-awake') ||
+          errorString.includes('keepawake') ||
+          errorString.includes('unable to activate keep awake') ||
+          (errorString.includes('id:') && (errorString.includes('keep awake') || errorString.includes('keep-awake'))) ||
+          errorString.includes('network request failed') ||
+          errorString.includes('networkerror') ||
+          errorString.includes('failed to fetch')) {
           return; // Suppress
         }
         originalConsoleWarn(...args);
@@ -321,13 +333,13 @@ function RootLayoutContent() {
     // Redirect to offline mode if connection is lost
     networkUnsubscribe.current = NetInfo.addEventListener(state => {
       const isConnected = state.isConnected ?? false;
-      
+
       // Get current route path from segments
       const currentPath = segments.join('/');
       const isOfflineScreen = currentPath.includes('OfflineEmergency');
       const isSplashScreen = currentPath.includes('SplashScreen');
       const isLoginScreen = currentPath.includes('Login');
-      
+
       if (!isConnected && !isOfflineScreen && !isSplashScreen && !isLoginScreen && !isNavigatingToOffline.current) {
         isNavigatingToOffline.current = true;
         router.replace('/components/OfflineEmergency/OfflineEmergency');
@@ -346,6 +358,21 @@ function RootLayoutContent() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user?.id) return;
+
+        // Fetch and save FCM token
+        const token = await getFCMToken();
+        if (token) {
+          const { error } = await supabase
+            .from('tbl_users')
+            .update({ fcm_token: token })
+            .eq('user_id', session.user.id);
+
+          if (error) {
+            console.error('Error saving FCM token to database:', error);
+          } else {
+            console.log('✅ FCM Token saved to database');
+          }
+        }
 
         // Remove existing channel if any
         if (messageChannelRef.current) {
@@ -366,12 +393,19 @@ function RootLayoutContent() {
               try {
                 const newMessage = payload.new as any;
                 const currentUserId = session.user.id;
-                
+
                 // Only process if message is for current user (receiver_id matches)
                 // and not from current user (sender_id doesn't match)
                 if (newMessage.receiver_id === currentUserId && newMessage.sender_id !== currentUserId) {
-                  // Message received - could trigger UI update or other action here
+                  // Message received - show notification
                   console.log('New message received:', newMessage);
+                  if (newMessage.message_content) {
+                    await showMessageNotification(
+                      'New Message', // You might want to fetch sender name ideally
+                      newMessage.message_content,
+                      newMessage.report_id
+                    );
+                  }
                 }
               } catch (error) {
                 console.error('Error processing new message:', error);
@@ -432,41 +466,41 @@ function RootLayoutContent() {
           animation: 'fade',
         }}
       >
-        <Stack.Screen 
-          name="index" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="index"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="components/SplashScreen/SplashScreen" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="components/SplashScreen/SplashScreen"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="components/Login/Login" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="components/Login/Login"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="components/Register/Register" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="components/Register/Register"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="screens/Home" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="screens/Home"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="screens/Profile" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="screens/Profile"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="screens/Report" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="screens/Report"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="components/OfflineEmergency/OfflineEmergency" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="components/OfflineEmergency/OfflineEmergency"
+          options={{ headerShown: false }}
         />
-        <Stack.Screen 
-          name="components/UserDataDemo/UserDataDemo" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="components/UserDataDemo/UserDataDemo"
+          options={{ headerShown: false }}
         />
       </Stack>
     </AuthProvider>
@@ -487,11 +521,11 @@ class ErrorBoundary extends React.Component<
     // Suppress keep-awake errors
     const errorMsg = error?.message || String(error) || '';
     const errorLower = errorMsg.toLowerCase();
-    if (errorLower.includes('keep awake') || 
-        errorLower.includes('keep-awake') ||
-        errorLower.includes('network request failed') ||
-        errorLower.includes('networkerror') ||
-        errorLower.includes('failed to fetch')) {
+    if (errorLower.includes('keep awake') ||
+      errorLower.includes('keep-awake') ||
+      errorLower.includes('network request failed') ||
+      errorLower.includes('networkerror') ||
+      errorLower.includes('failed to fetch')) {
       return { hasError: false, error: null };
     }
     return { hasError: true, error };
@@ -501,11 +535,11 @@ class ErrorBoundary extends React.Component<
     // Suppress keep-awake errors and network errors
     const errorMsg = error?.message || String(error) || '';
     const errorLower = errorMsg.toLowerCase();
-    if (errorLower.includes('keep awake') || 
-        errorLower.includes('keep-awake') ||
-        errorLower.includes('network request failed') ||
-        errorLower.includes('networkerror') ||
-        errorLower.includes('failed to fetch')) {
+    if (errorLower.includes('keep awake') ||
+      errorLower.includes('keep-awake') ||
+      errorLower.includes('network request failed') ||
+      errorLower.includes('networkerror') ||
+      errorLower.includes('failed to fetch')) {
       return;
     }
     console.error('ErrorBoundary caught an error:', error, errorInfo);

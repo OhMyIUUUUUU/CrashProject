@@ -560,12 +560,12 @@ export const styles = StyleSheet.create({
     paddingVertical: 12, // Matches the Call button height
     alignItems: 'center',
     justifyContent: 'center',
-    
+
     // THE FIX: Red Outline, No White Border
-    borderWidth: 2, 
-    borderColor: '#FF6B6B', 
+    borderWidth: 2,
+    borderColor: '#FF6B6B',
     borderBottomWidth: 2, // Explicitly set this to ensure no underlying white line overrides it
-    
+
     // Soft Shadow
     shadowColor: '#D1B0B0',
     shadowOffset: { width: 3, height: 3 },
@@ -792,19 +792,19 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   reportHeaderTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '1a1a1a',
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
     marginBottom: 4,
     letterSpacing: 0.5,
-    textShadowColor: 'trasnparent',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowColor: 'rgba(0,0,0,0.1)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   reportHeaderSubtitle: {
-    fontSize: 13,
-    color: '666',
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
     letterSpacing: 0.2,
   },
   // Category Grid
@@ -1423,7 +1423,7 @@ export const styles = StyleSheet.create({
   // Active Case Section
   activeCaseContainer: {
     // --- POSITIONING CHANGE ---
-    position: 'absolute', 
+    position: 'absolute',
     bottom: 90, // Adjust this value to clear your Bottom Navbar perfectly
     left: 12,
     right: 12,
@@ -1433,17 +1433,17 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.98)', // High opacity to hide content behind it
     borderRadius: 24,
     padding: 20,
-    
+
     // Shadows (Slightly stronger upwards shadow for bottom sheets)
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 }, // Negative height moves shadow up
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 20,
-    
+
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 107, 0.2)', // Subtle red border
-    
+
     // Responsive adjustments
     maxHeight: screenHeight * 0.6, // Maximum 60% of screen height
   },
@@ -1454,11 +1454,11 @@ export const styles = StyleSheet.create({
     minHeight: 200, // Minimum height to ensure content is visible
   },
   minimizeButton: {
-  paddingHorizontal: 10,
-  paddingVertical: 10,
-  borderRadius: 10,
-  backgroundColor: '#F5F5F5',
-  marginLeft: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#F5F5F5',
+    marginLeft: 5,
   },
   activeCaseTitleRow: {
     flexDirection: 'row',

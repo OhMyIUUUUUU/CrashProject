@@ -27,7 +27,7 @@ export const useActiveCase = () => {
   const checkActiveCase = async () => {
     try {
       setLoading(true);
-      
+
       const { data: { session } } = await supabase.auth.getSession();
       const authUserId = session?.user?.id || null;
       const userEmail = session?.user?.email || null;
@@ -192,7 +192,7 @@ export const useActiveCase = () => {
   useEffect(() => {
     checkActiveCase();
     checkNotifications();
-    
+
     // Set up real-time subscription for report updates
     const channel = supabase
       .channel('active-case-changes')
@@ -234,10 +234,13 @@ export const useActiveCase = () => {
           try {
             // Extract file path from URL
             const urlParts = media.file_url.split('/');
-            const pathIndex = urlParts.findIndex(part => part === bucketName);
+
+            // 🟢 FIX: Added parentheses around (part: string)
+            const pathIndex = urlParts.findIndex((part: string) => part === bucketName);
+
             if (pathIndex !== -1 && pathIndex < urlParts.length - 1) {
               const filePath = urlParts.slice(pathIndex + 1).join('/');
-              
+
               const { error: deleteError } = await supabase.storage
                 .from(bucketName)
                 .remove([filePath]);
@@ -259,11 +262,11 @@ export const useActiveCase = () => {
         .from('tbl_messages')
         .delete()
         .eq('report_id', reportId);
-      
+
       if (messagesError) {
         console.warn('[useActiveCase] Error deleting messages:', messagesError.message || messagesError);
       }
-      
+
       // Delete the report from database
       const { error } = await supabase
         .from('tbl_reports')
@@ -274,7 +277,7 @@ export const useActiveCase = () => {
         console.error('[useActiveCase] Error deleting report:', error.message || error);
         return false;
       }
-      
+
       await checkActiveCase();
       return true;
     } catch (error: any) {
@@ -283,6 +286,6 @@ export const useActiveCase = () => {
     }
   };
 
-  return { activeCase, loading, checkActiveCase, cancelReport, notifications, checkNotifications };
+  return { activeCase, loading, checkActiveCase, cancelReport, notifications, checkNotifications, setActiveCase };
 };
 

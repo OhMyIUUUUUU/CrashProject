@@ -14,6 +14,8 @@ export interface UserData {
   barangay: string;
   password: string;
   profilePicture?: string;
+  user_id?: string; // Add optional IDs for compatibility
+  id?: string;
 }
 
 export interface EmergencyContact {
@@ -79,16 +81,16 @@ export const StorageService = {
     try {
       const usersJson = await AsyncStorage.getItem(STORAGE_KEYS.USERS_DB);
       const users: UserData[] = usersJson ? JSON.parse(usersJson) : [];
-      
+
       // Check if user already exists
       const existingUser = users.find(
         (u) => u.email === userData.email || u.phone === userData.phone
       );
-      
+
       if (existingUser) {
         return false; // User already exists
       }
-      
+
       users.push(userData);
       await AsyncStorage.setItem(STORAGE_KEYS.USERS_DB, JSON.stringify(users));
       return true;
@@ -103,11 +105,11 @@ export const StorageService = {
     try {
       const usersJson = await AsyncStorage.getItem(STORAGE_KEYS.USERS_DB);
       const users: UserData[] = usersJson ? JSON.parse(usersJson) : [];
-      
+
       const user = users.find(
         (u) => (u.email === emailOrPhone || u.phone === emailOrPhone) && u.password === password
       );
-      
+
       return user || null;
     } catch (error) {
       console.error('Error verifying credentials:', error);
@@ -121,19 +123,19 @@ export const StorageService = {
       // Update in users database
       const usersJson = await AsyncStorage.getItem(STORAGE_KEYS.USERS_DB);
       const users: UserData[] = usersJson ? JSON.parse(usersJson) : [];
-      
+
       const userIndex = users.findIndex(
         (u) => u.email === updatedUserData.email
       );
-      
+
       if (userIndex !== -1) {
         users[userIndex] = updatedUserData;
         await AsyncStorage.setItem(STORAGE_KEYS.USERS_DB, JSON.stringify(users));
       }
-      
+
       // Update current session
       await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(updatedUserData));
-      
+
       return true;
     } catch (error) {
       console.error('Error updating user profile:', error);

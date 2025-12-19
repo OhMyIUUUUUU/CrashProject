@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-const supabaseUrl = 'https://hlkjnvovfhxwhjseeokx.supabase.co'
-const supabasePublishableKey = 'sb_publishable_LpWHpHLtoeE8vtJkw4oAtw_oD2FW5_l'
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabasePublishableKey) {
+  console.warn('Supabase credentials missing in environment variables. Check .env file.');
+}
 
 // Create a storage adapter that uses AsyncStorage but handles errors gracefully
 // We'll use a factory function that loads AsyncStorage only when actually needed

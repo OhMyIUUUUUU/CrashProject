@@ -1,24 +1,31 @@
-import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
 import CustomTabBar from '../components/Customtabbar/CustomTabBar';
+import ActiveCaseCard from '../components/Home/ActiveCaseCard';
+import FloatingChatButton from '../components/Home/FloatingChatButton';
+import NotificationDetailModal from '../components/Home/NotificationDetailModal';
+import NotificationHeader from '../components/Home/NotificationHeader';
+import NotificationListModal from '../components/Home/NotificationListModal';
+import SOSSection from '../components/Home/SOSSection';
 import { useAuth } from '../contexts/AuthContext';
 import { ActiveCase, useActiveCase } from '../hooks/useActiveCase';
 import { supabase } from '../lib/supabase';
 import { reverseGeocode } from '../utils/geocoding';
-import { formatPhilippineDateTime, formatPhilippineDateTimeLong } from '../utils/philippineTime';
+import { formatPhilippineDateTimeLong } from '../utils/philippineTime';
 import { styles } from './styles';
-
-const { width: screenWidth } = Dimensions.get('window');
-const buttonSize = Math.min(screenWidth * 0.6, 220);
 
 const Home: React.FC = () => {
   const router = useRouter();
   const { user, loadUser } = useAuth();
-  const { activeCase, cancelReport, checkActiveCase, notifications, checkNotifications } = useActiveCase();
+  // Ensure hook is called at top level
+  const { activeCase, loading: loadingActiveCase, checkActiveCase, cancelReport, notifications, checkNotifications, setActiveCase } = useActiveCase();
+
+  // We still need this reference for intervals causing re-renders/stale closures if not careful, 
+  // but for the direct call inside useCallback, we can use the destructured 'setActiveCase'
+
   const [isLoading, setIsLoading] = useState(true);
   const [sendingSOS, setSendingSOS] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -34,11 +41,6 @@ const Home: React.FC = () => {
   const activeCaseRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRefreshingActiveCaseRef = useRef(false);
   const preFetchedDataRef = useRef<{ userInfo: any; location: any } | null>(null);
-  
-  // Ripple animation for SOS button
-  const rippleScale = useRef(new Animated.Value(0)).current;
-  const rippleOpacity = useRef(new Animated.Value(0)).current;
-
 
   // Monitor network connectivity - redirect to offline mode if connection is lost
   useEffect(() => {
@@ -75,86 +77,26 @@ const Home: React.FC = () => {
     console.log('Active Case State Changed:', activeCase);
   }, [activeCase]);
 
-  // Animation values for SOS button
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
   useEffect(() => {
     // Load user data if not already loaded (with error handling)
     const loadUserData = async () => {
       try {
-      if (!user) {
-        await loadUser();
-        // Wait a moment for state to update
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+        if (!user) {
+          await loadUser();
+          // Wait a moment for state to update
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
         // Even if user is not loaded, continue (might be network issue)
-      setIsLoading(false);
+        setIsLoading(false);
       } catch (error) {
         console.warn('Error loading user data, continuing anyway:', error);
         // Continue even if there's an error - user might be logged in locally
         setIsLoading(false);
       }
     };
-    
+
     loadUserData();
   }, [user, loadUser]);
-
-  // Pulsing animation effect for SOS button
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [pulseAnim]);
-
-  const handleSOSPressIn = useCallback(() => {
-    // Scale down animation
-    Animated.spring(scaleAnim, {
-      toValue: 0.95,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 10,
-    }).start();
-    
-    // Ripple effect - start (expands around the button)
-    rippleScale.setValue(0.8);
-    rippleOpacity.setValue(0.8);
-    Animated.parallel([
-      Animated.timing(rippleScale, {
-        toValue: 1.5,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rippleOpacity, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [scaleAnim, rippleScale, rippleOpacity]);
-
-  const handleSOSPressOut = useCallback(() => {
-    // Scale back animation
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 10,
-    }).start();
-  }, [scaleAnim]);
 
   const handleCancelReport = useCallback(async () => {
     if (!activeCase || cancelling || countdown > 0) {
@@ -190,7 +132,7 @@ const Home: React.FC = () => {
                     clearInterval(countdownIntervalRef.current);
                     countdownIntervalRef.current = null;
                   }
-                  
+
                   // Cancel the report (pass activeCase to preserve remarks)
                   cancelReport(activeCase.report_id, activeCase).then(async (success) => {
                     setCancelling(false);
@@ -229,273 +171,191 @@ const Home: React.FC = () => {
     };
   }, []);
 
-  // Send SOS with pre-fetched data (called immediately after countdown)
+  const handleCancelSOSCountdown = useCallback(() => {
+    if (sosCountdownIntervalRef.current) {
+      clearInterval(sosCountdownIntervalRef.current);
+      sosCountdownIntervalRef.current = null;
+    }
+    setSosCountdown(0);
+    setSendingSOS(false);
+    preFetchedDataRef.current = null;
+  }, []);
+
+  // Send SOS with pre-fetched data (optimistic update)
   const sendSOSWithPreFetchedData = useCallback(async (preFetched: { userInfo: any; location: any } | null) => {
+    // 1. FAST PATH: Optimistic Update using cached/available data
+    // We want to show the UI update in frame 1, so no awaits here if possible.
+
+    // Get timestamp and user
+    const timestamp = new Date().toISOString();
+    let authUser = user; // From context
+
+    // Ideally we'd have the auth ID, but if not we can guess or wait slightly in background
+    // If we are logged in, `user` object from useAuth should be populated
+
+    // Use pre-fetched location OR 0,0 (we will update it in background)
+    // If pre-fetched is null, we assume we can get it fast, but to be INSTANT we default to 0,0 or last known
+    let latitude = preFetched?.location?.latitude || 0;
+    let longitude = preFetched?.location?.longitude || 0;
+
+    const tempId = `temp-${Date.now()}`;
+
+    // Construct optimistic case immediately
+    const optimisticCase: ActiveCase = {
+      report_id: tempId,
+      reporter_id: 'unknown', // Will fill in background
+      assigned_office_id: null,
+      category: 'Emergency',
+      description: 'Emergency SOS - Sending...',
+      status: 'Pending',
+      latitude: latitude,
+      longitude: longitude,
+      created_at: timestamp,
+      updated_at: timestamp,
+      office_name: 'Assigning...',
+      remarks: null,
+      location_city: null,
+      location_barangay: null
+    };
+
+    // Show it NOW
     setSendingSOS(true);
+    // @ts-ignore
+    if (typeof setActiveCase === 'function') {
+      // @ts-ignore
+      setActiveCase(optimisticCase);
+    }
 
-    try {
-      // 1. Get session
-      const { data: { session } } = await supabase.auth.getSession();
-      const authUserId = session?.user?.id || null;
-      const userEmail = session?.user?.email || null;
+    // 2. Background Sync
+    // Now we do the heavy lifting without blocking the UI
+    (async () => {
+      try {
+        // Get valid session/user
+        // If context user is missing, fallback to session
+        let reporterId = null;
+        let userInfo = authUser ? { ...authUser, user_id: authUser.id } : null; // Context user doesn't have ID field usually, wait, UserData interface has email but maybe not ID
 
-      if (!authUserId && !userEmail) {
-        Alert.alert('Error', 'Please log in to send SOS');
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
+        const { data: { session } } = await supabase.auth.getSession();
+        const authUserId = session?.user?.id;
 
-      // Use pre-fetched data if available, otherwise fetch now
-      let userInfo = preFetched?.userInfo;
-      let reporterId = null;
-      let latitude: number;
-      let longitude: number;
-
-      if (preFetched?.userInfo && preFetched?.location) {
-        // Use pre-fetched data - immediate!
-        userInfo = preFetched.userInfo;
-        reporterId = userInfo.user_id;
-        latitude = preFetched.location.latitude;
-        longitude = preFetched.location.longitude;
-      } else {
-        // Fallback: fetch data now (shouldn't happen if pre-fetch worked)
-        // Try cached user data first
-        if (user && user.email === userEmail) {
-          reporterId = authUserId;
-          userInfo = {
-            user_id: authUserId,
-            first_name: user.firstName,
-            last_name: user.lastName,
-            phone: user.phone,
-            email: user.email,
-            emergency_contact_name: user.emergencyContactName,
-            emergency_contact_number: user.emergencyContactNumber,
-          };
+        if (!authUserId) {
+          // Not logged in - revert
+          setSendingSOS(false);
+          setSosCountdown(0);
+          // @ts-ignore
+          setActiveCase(null);
+          Alert.alert('Error', 'Please log in to send SOS');
+          return;
         }
 
-        if (!userInfo) {
-          const [userInfoResult, locationResult] = await Promise.allSettled([
-            Promise.allSettled([
-              authUserId ? supabase
-                .from('tbl_users')
-                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
-                .eq('user_id', authUserId)
-                .maybeSingle() : Promise.resolve({ data: null, error: null }),
-              userEmail ? supabase
-                .from('tbl_users')
-                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
-                .eq('email', userEmail)
-                .maybeSingle() : Promise.resolve({ data: null, error: null })
-            ]).then(results => {
-              for (const result of results) {
-                if (result.status === 'fulfilled' && result.value?.data && !result.value?.error) {
-                  return result.value;
-                }
-              }
-              return { data: null, error: null };
-            }).catch(() => ({ data: null, error: null })),
-            (async () => {
-              const { status } = await Location.requestForegroundPermissionsAsync();
-              if (status !== 'granted') {
-                throw new Error('Location permission denied');
-              }
-              const currentLocation = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Low,
-              });
-              return {
-                latitude: currentLocation.coords.latitude,
-                longitude: currentLocation.coords.longitude,
-              };
-            })()
-          ]);
+        reporterId = authUserId;
 
-          if (userInfoResult.status === 'fulfilled' && userInfoResult.value?.data) {
-            userInfo = userInfoResult.value.data;
-            reporterId = userInfo.user_id;
-          } else if (!userInfo) {
-            reporterId = authUserId;
-          }
-
-          if (locationResult.status === 'rejected') {
-            Alert.alert(
-              'Location Permission Required',
-              'Location permission is required to send SOS. Please enable it in settings.',
-              [{ text: 'OK' }]
-            );
-            setSendingSOS(false);
-            setSosCountdown(0);
-            return;
-          }
-
-          latitude = locationResult.value.latitude;
-          longitude = locationResult.value.longitude;
-        } else {
-          reporterId = userInfo.user_id;
-          // Still need to get location
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert(
-              'Location Permission Required',
-              'Location permission is required to send SOS. Please enable it in settings.',
-              [{ text: 'OK' }]
-            );
-            setSendingSOS(false);
-            setSosCountdown(0);
-            return;
-          }
-          const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Low,
-          });
-          latitude = currentLocation.coords.latitude;
-          longitude = currentLocation.coords.longitude;
+        // Fetch real user info if missing
+        if (!userInfo && !preFetched?.userInfo) {
+          const { data: uData } = await supabase.from('tbl_users').select('*').eq('user_id', authUserId).maybeSingle();
+          userInfo = uData;
+        } else if (preFetched?.userInfo) {
+          userInfo = preFetched.userInfo;
         }
-      }
 
-      if (!userInfo || !reporterId) {
-        console.error('[Home] Error fetching user info from database - user not found or query failed');
-        Alert.alert(
-          'Error', 
-          'Unable to fetch user information from database. Please make sure you are logged in and try again.',
-          [{ text: 'OK' }]
-        );
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
-
-      // 2. Create minimal description first (geocoding happens after SOS is sent)
-      const userName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'User';
-      
-      // Simplified description for faster sending
-      const description = `EMERGENCY SOS\nReporter: ${userName}\nPhone: ${userInfo.phone || 'N/A'}\nGPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\nTime: ${formatPhilippineDateTimeLong(new Date())}`;
-
-      // 3. Call RPC to create report immediately (don't wait for geocoding)
-      const { data, error } = await supabase.rpc('create_emergency_sos', {
-        p_user_id: reporterId,
-        p_lat: latitude,
-        p_long: longitude,
-        p_category: 'Emergency',
-        p_description: description,
-      });
-
-      if (error) {
-        console.error('[Home] SOS RPC error:', error.message || error);
-        Alert.alert(
-          'Error',
-          `Failed to send SOS: ${error.message || 'Unknown error'}`,
-          [{ text: 'OK' }]
-        );
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
-
-      const reportId = data?.report_id;
-      const assignedOfficeId = data?.assigned_office_id;
-      const assignedOfficeName = data?.assigned_office_name;
-
-      if (!reportId) {
-        Alert.alert('Error', 'SOS created but no report_id returned.');
-        setSendingSOS(false);
-        setSosCountdown(0);
-        return;
-      }
-
-      // 3. Update report with location details in background (non-blocking)
-      // Geocoding happens asynchronously after SOS is sent
-      reverseGeocode(latitude, longitude)
-        .then(async (geocodeResult) => {
-          if (geocodeResult.city || geocodeResult.barangay) {
-            try {
-              const updateData: { location_city?: string; location_barangay?: string; description?: string } = {};
-              if (geocodeResult.city) {
-                const cityName = geocodeResult.city.trim();
-                updateData.location_city = cityName.endsWith(' City') ? cityName : `${cityName} City`;
-              }
-              if (geocodeResult.barangay) {
-                updateData.location_barangay = geocodeResult.barangay;
-              }
-              
-              // Update description with full details
-              const fullDescription = `EMERGENCY SOS ALERT\n\n` +
-                `Reporter: ${userName}\n` +
-                `Phone: ${userInfo.phone || 'N/A'}\n` +
-                `Email: ${userInfo.email || 'N/A'}\n` +
-                `Emergency Contact: ${userInfo.emergency_contact_name || 'N/A'} (${userInfo.emergency_contact_number || 'N/A'})\n` +
-                `Location: ${geocodeResult.fullAddress || `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`}\n` +
-                `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
-                `Role: Witness\n` +
-                `Time: ${formatPhilippineDateTimeLong(new Date())}`;
-              updateData.description = fullDescription;
-
-              await supabase
-                .from('tbl_reports')
-                .update(updateData)
-                .eq('report_id', reportId);
-            } catch (updateError) {
-              // Silently fail - report is already created
-              console.error('[Home] Error updating report location:', updateError);
-            }
+        // Get location if missing (CRITICAL)
+        if (latitude === 0 && longitude === 0) {
+          // Try last known first (fast)
+          const lastKnown = await Location.getLastKnownPositionAsync();
+          if (lastKnown) {
+            latitude = lastKnown.coords.latitude;
+            longitude = lastKnown.coords.longitude;
+          } else {
+            // Must wait for current
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            latitude = loc.coords.latitude;
+            longitude = loc.coords.longitude;
           }
-        })
-        .catch(() => {
-          // Silently fail - geocoding failed but report is already created
+
+          // Update optimistic case with location
+          optimisticCase.latitude = latitude;
+          optimisticCase.longitude = longitude;
+          // @ts-ignore
+          setActiveCase({ ...optimisticCase });
+        }
+
+        const userName = userInfo ? `${userInfo.firstName || userInfo.firstName || ''} ${userInfo.lastName || userInfo.lastName || ''}`.trim() : 'User';
+        const description = `EMERGENCY SOS\nReporter: ${userName}\nPhone: ${userInfo?.phone || 'N/A'}\nGPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\nTime: ${formatPhilippineDateTimeLong(new Date())}`;
+
+        const { data, error } = await supabase.rpc('create_emergency_sos', {
+          p_user_id: reporterId,
+          p_lat: latitude,
+          p_long: longitude,
+          p_category: 'Emergency',
+          p_description: description,
         });
 
-      // Refresh active case so it appears in the UI (run in background, don't block UI)
-      checkActiveCase().catch(() => {
-        // Silently fail - real-time subscription will update eventually
-      });
+        if (error) throw error;
 
-      const reportIdForDisplay = `${reportId}`.substring(0, 8) + '...';
-      const caseInfo = `🚨 ACTIVE CASE CREATED\n\n` +
-        `🟠 Status: PENDING\n` +
-        `📁 Category: Emergency\n` +
-        `📅 Time: ${formatPhilippineDateTimeLong(new Date())}\n` +
-        `📍 GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n` +
-        (assignedOfficeName ? `🏢 Office: ${assignedOfficeName}\n` : '🏢 Office: Assigning nearest station...\n') +
-        `\n🆔 Report ID: ${reportIdForDisplay}`;
+        const realReportId = data?.report_id;
+        const assignedOfficeName = data?.assigned_office_name;
 
-      // Show active case info, then automatically open chat after a short delay
-      Alert.alert('Active Case', caseInfo);
+        // Update state with confirmed data
+        const confirmedCase: ActiveCase = {
+          ...optimisticCase,
+          report_id: realReportId,
+          description: description,
+          assigned_office_id: data?.assigned_office_id,
+          office_name: assignedOfficeName,
+          status: 'Pending',
+          reporter_id: reporterId
+        };
 
-      setTimeout(() => {
-        router.push({
-          pathname: '/screens/ChatScreen',
-          params: {
-            report_id: reportId,
-            office_name: assignedOfficeName || 'Police Station',
-          },
-        } as any);
-      }, 1500);
-    } catch (error: any) {
-      console.error('Error sending SOS:', error);
-      Alert.alert(
-        'Error',
-        'Failed to send SOS. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setSendingSOS(false);
-      setSosCountdown(0);
-    }
+        // @ts-ignore
+        setActiveCase(confirmedCase);
+        setSendingSOS(false);
+        setSosCountdown(0);
+
+        // Geocode in background
+        reverseGeocode(latitude, longitude).then(async (res) => {
+          if (res.city || res.barangay) {
+            const updateData: any = {};
+            if (res.city) updateData.location_city = res.city;
+            if (res.barangay) updateData.location_barangay = res.barangay;
+
+            const fullDesc = description.replace(
+              `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+              res.fullAddress || `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+            );
+            updateData.description = fullDesc;
+
+            await supabase.from('tbl_reports').update(updateData).eq('report_id', realReportId);
+          }
+        }).catch(console.error);
+
+        // Navigate to chat faster
+        setTimeout(() => {
+          router.push({
+            pathname: '/screens/ChatScreen',
+            params: { report_id: realReportId, office_name: assignedOfficeName || 'Police Station' },
+          } as any);
+        }, 300); // Super fast transition
+
+      } catch (error: any) {
+        console.error('Error sending SOS:', error);
+        Alert.alert('Error', 'Failed to send SOS. Please try again.');
+        setSendingSOS(false);
+        setSosCountdown(0);
+        // Revert
+        // @ts-ignore
+        setActiveCase(null);
+      }
+    })();
+
   }, [checkActiveCase, user, router]);
 
   const handleSOSPress = useCallback(async () => {
     // If countdown is active, allow canceling by tapping again
     if (sosCountdown > 0) {
-      // Cancel countdown
-      if (sosCountdownIntervalRef.current) {
-        clearInterval(sosCountdownIntervalRef.current);
-        sosCountdownIntervalRef.current = null;
-      }
-      setSosCountdown(0);
-      setSendingSOS(false);
-      preFetchedDataRef.current = null;
+      handleCancelSOSCountdown();
       return;
     }
-    
+
     // Guard against sending while already sending
     if (sendingSOS) {
       return;
@@ -504,11 +364,11 @@ const Home: React.FC = () => {
     // If there is already an active case in state, show it instead of creating a new SOS
     if (activeCase && activeCase.report_id) {
       const officeName = activeCase.office_name;
-      const statusEmoji = activeCase.status === 'Pending' ? '🟠' : 
-                         activeCase.status === 'Acknowledged' ? '🟡' :
-                         activeCase.status === 'En Route' ? '🔵' :
-                         activeCase.status === 'On Scene' ? '🟢' : '🔵';
-      
+      const statusEmoji = activeCase.status === 'Pending' ? '🟠' :
+        activeCase.status === 'Acknowledged' ? '🟡' :
+          activeCase.status === 'En Route' ? '🔵' :
+            activeCase.status === 'On Scene' ? '🟢' : '🔵';
+
       const gpsLine = activeCase.latitude && activeCase.longitude
         ? `📍 GPS: ${Number(activeCase.latitude).toFixed(6)}, ${Number(activeCase.longitude).toFixed(6)}\n`
         : '';
@@ -520,25 +380,25 @@ const Home: React.FC = () => {
         gpsLine +
         (officeName ? `🏢 Office: ${officeName}\n` : '🏢 Office: Not assigned yet\n') +
         (activeCase.description ? `\n📝 Description:\n${activeCase.description.substring(0, 120)}${activeCase.description.length > 120 ? '...' : ''}` : '');
-      
+
       Alert.alert(
         'Active Case',
         caseInfo,
         [
-          { 
-            text: '👁️ View Details', 
+          {
+            text: '👁️ View Details',
             onPress: () => {
               setTimeout(() => {
                 scrollViewRef.current?.scrollTo({ y: 400, animated: true });
               }, 100);
             }
           },
-          { 
+          {
             text: '🗑️ Cancel Report',
             onPress: () => {
               handleCancelReport();
-            }, 
-            style: 'destructive' 
+            },
+            style: 'destructive'
           },
           { text: 'Close', style: 'cancel' }
         ],
@@ -547,7 +407,7 @@ const Home: React.FC = () => {
       return; // Stop here - don't proceed with SOS
     }
     // No active case - start countdown and pre-fetch data simultaneously
-    
+
     // Start 5-second countdown
     setSosCountdown(5);
     // We'll only set sendingSOS to true once we actually start sending
@@ -572,7 +432,7 @@ const Home: React.FC = () => {
         // Pre-fetch user info and location in parallel
         const [userInfoResult, locationResult] = await Promise.allSettled([
           // Try cached user first, then fetch if needed
-          user && user.email === userEmail ? Promise.resolve({ 
+          user && user.email === userEmail ? Promise.resolve({
             data: {
               user_id: authUserId,
               first_name: user.firstName,
@@ -581,28 +441,28 @@ const Home: React.FC = () => {
               email: user.email,
               emergency_contact_name: user.emergencyContactName,
               emergency_contact_number: user.emergencyContactNumber,
-            }, 
-            error: null 
+            },
+            error: null
           }) :
-          Promise.allSettled([
-            authUserId ? supabase
-              .from('tbl_users')
-              .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
-              .eq('user_id', authUserId)
-              .maybeSingle() : Promise.resolve({ data: null, error: null }),
-            userEmail ? supabase
-              .from('tbl_users')
-              .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
-              .eq('email', userEmail)
-              .maybeSingle() : Promise.resolve({ data: null, error: null })
-          ]).then(results => {
-            for (const result of results) {
-              if (result.status === 'fulfilled' && result.value?.data && !result.value?.error) {
-                return result.value;
+            Promise.allSettled([
+              authUserId ? supabase
+                .from('tbl_users')
+                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+                .eq('user_id', authUserId)
+                .maybeSingle() : Promise.resolve({ data: null, error: null }),
+              userEmail ? supabase
+                .from('tbl_users')
+                .select('user_id, first_name, last_name, phone, email, emergency_contact_name, emergency_contact_number')
+                .eq('email', userEmail)
+                .maybeSingle() : Promise.resolve({ data: null, error: null })
+            ]).then(results => {
+              for (const result of results) {
+                if (result.status === 'fulfilled' && result.value?.data && !result.value?.error) {
+                  return result.value;
+                }
               }
-            }
-            return { data: null, error: null };
-          }).catch(() => ({ data: null, error: null })),
+              return { data: null, error: null };
+            }).catch(() => ({ data: null, error: null })),
           // Pre-fetch location with LOW accuracy for speed
           (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
@@ -652,10 +512,6 @@ const Home: React.FC = () => {
           }
 
           // Set countdown back to 0 and send SOS now using any pre-fetched data
-          // Button text will go back to "SOS" while we send in the background
-          // and we'll show the Active Case popup as soon as the report is created.
-          // (The button itself is disabled while sending via sendingSOS flag.)
-          // Note: sendSOSWithPreFetchedData internally sets sendingSOS=true.
           setSosCountdown(0);
 
           // Send SOS now using any pre-fetched data
@@ -668,9 +524,9 @@ const Home: React.FC = () => {
         return prev - 1;
       });
     }, 1000);
-    
+
     return; // Stop here, countdown will trigger sendSOS
-  }, [sosCountdown, sendingSOS, activeCase, handleCancelReport, user, sendSOSWithPreFetchedData]);
+  }, [sosCountdown, sendingSOS, activeCase, handleCancelReport, user, sendSOSWithPreFetchedData, handleCancelSOSCountdown]);
 
   // Show loading only briefly, then render even if user data is incomplete
   if (isLoading) {
@@ -685,438 +541,89 @@ const Home: React.FC = () => {
 
   return (
     <View style={styles.gradientContainer}>
-        <View style={styles.container}>
-          {/* Notification Icon at Top */}
-          <View style={styles.notificationHeader}>
-            <TouchableOpacity
-              style={styles.notificationIconButton}
-              onPress={async () => {
-                await checkNotifications();
-                setNotificationModalVisible(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="notifications" size={28} color="#FF6B6B" />
-              {notifications.length > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
-                    {notifications.length > 9 ? '9+' : notifications.length}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+      <View style={styles.container}>
+        {/* Notification Icon at Top */}
+        <NotificationHeader
+          count={notifications.length}
+          onPress={async () => {
+            await checkNotifications();
+            setNotificationModalVisible(true);
+          }}
+        />
 
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={async () => {
-                  setRefreshing(true);
-                  try {
-                    await Promise.all([
-                      checkActiveCase(),
-                      checkNotifications()
-                    ]);
-                  } catch (error) {
-                    console.error('Error refreshing:', error);
-                  } finally {
-                    setRefreshing(false);
-                  }
-                }}
-                colors={['#FF6B6B']}
-                tintColor="#FF6B6B"
-              />
-            }
-          >
-          {/* SOS Button */}
-          <View style={[
-            styles.sosButtonContainer,
-            activeCase && !isCaseMinimized && styles.sosButtonContainerExpanded
-          ]}>
-            <Animated.View
-              style={[
-                {
-                  transform: [
-                    { scale: Animated.multiply(pulseAnim, scaleAnim) }
-                  ],
-                },
-              ]}
-            >
-              {/* Ripple effect - positioned outside button to be visible around it */}
-              <Animated.View
-                style={{
-                  position: 'absolute',
-                  width: buttonSize * 1.5,
-                  height: buttonSize * 1.5,
-                  borderRadius: (buttonSize * 1.5) / 2,
-                  backgroundColor: 'rgba(255, 107, 107, 0.3)',
-                  transform: [{ scale: rippleScale }],
-                  opacity: rippleOpacity,
-                  top: -buttonSize * 0.25,
-                  left: -buttonSize * 0.25,
-                  zIndex: 0,
-                }}
-              />
-              <TouchableOpacity
-                onPress={handleSOSPress}
-                onPressIn={handleSOSPressIn}
-                onPressOut={handleSOSPressOut}
-                activeOpacity={1}
-                disabled={sendingSOS}
-                style={[
-                  styles.sosButtonNeumorphic,
-                  {
-                    width: buttonSize,
-                    height: buttonSize,
-                    borderRadius: buttonSize / 2,
-                    opacity: sendingSOS ? 0.7 : 1,
-                    zIndex: 1,
-                  }
-                ]}
-              >
-                <View style={[styles.sosButtonInner, {
-                  width: buttonSize * 0.85,
-                  height: buttonSize * 0.85,
-                  borderRadius: (buttonSize * 0.85) / 2,
-                }]}>
-                  <View style={styles.sosButtonContent}>
-                    {sosCountdown > 0 ? (
-                      <>
-                        <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
-                          {sosCountdown}
-                        </Text>
-                        <Text style={[styles.sosButtonSubtext, { fontSize: buttonSize * 0.08 }]}>
-                          Cancel?
-                        </Text>
-                      </>
-                    ) : sendingSOS ? (
-                      <>
-                        <ActivityIndicator size="large" color="#FFFFFF" />
-                        <Text
-                          style={[
-                            styles.sosButtonSubtext,
-                            { fontSize: buttonSize * 0.08, marginTop: 8 },
-                          ]}
-                        >
-                          Sending...
-                        </Text>
-                      </>
-                    ) : (
-                      <Text style={[styles.sosButtonText, { fontSize: buttonSize * 0.2 }]}>
-                        SOS
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-            
-            {/* Cancel Panel - Shows during countdown */}
-            {sosCountdown > 0 && (
-              <View style={styles.cancelPanel}>
-                <Text style={styles.cancelPanelText}>Emergency SOS will be sent in {sosCountdown} seconds</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    // Cancel countdown
-                    if (sosCountdownIntervalRef.current) {
-                      clearInterval(sosCountdownIntervalRef.current);
-                      sosCountdownIntervalRef.current = null;
-                    }
-                    setSosCountdown(0);
-                    setSendingSOS(false);
-                    preFetchedDataRef.current = null;
-                  }}
-                  style={styles.cancelButton}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                try {
+                  await Promise.all([
+                    checkActiveCase(),
+                    checkNotifications()
+                  ]);
+                } catch (error) {
+                  console.error('Error refreshing:', error);
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              colors={['#FF6B6B']}
+              tintColor="#FF6B6B"
+            />
+          }
+        >
+          {/* SOS Section */}
+          <SOSSection
+            onPress={handleSOSPress}
+            onCancelCountdown={handleCancelSOSCountdown}
+            sendingSOS={sendingSOS}
+            activeCase={!!activeCase}
+            isCaseMinimized={isCaseMinimized}
+            countdown={sosCountdown}
+          />
 
           {/* Active Case Info or No Active Case Label */}
-          {activeCase ? (
-            <View style={[
-              styles.activeCaseContainer,
-              !isCaseMinimized && styles.activeCaseContainerExpanded
-            ]}>
-              <View style={styles.activeCaseHeader}>
-                <View style={styles.activeCaseTitleRow}>
-                  <Ionicons name="alert-circle" size={24} color="#FF6B6B" />
-                  <Text style={styles.activeCaseTitle}>Active Case</Text>
-                  <View style={[styles.statusBadge, { 
-                    backgroundColor: activeCase.status === 'Pending' ? '#FF9500' : 
-                                    activeCase.status === 'Acknowledged' ? '#FFCC00' :
-                                    activeCase.status === 'En Route' ? '#007AFF' :
-                                    activeCase.status === 'On Scene' ? '#34C759' : 
-                                    '#007AFF' 
-                  }]}>
-                    <Text style={styles.statusText}>{activeCase.status.toUpperCase()}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setIsCaseMinimized(!isCaseMinimized)}
-                  style={styles.minimizeButton}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={isCaseMinimized ? "chevron-down" : "chevron-up"}
-                    size={20}
-                    color="#666"
-                  />
-                </TouchableOpacity>
-              </View>
-              
-              {!isCaseMinimized && (
-                <ScrollView 
-                  style={styles.caseDetailsContainer}
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={true}
-                >
-                  <View style={styles.caseDetailRow}>
-                    <Ionicons name="folder" size={16} color="#666" />
-                    <Text style={styles.caseDetailLabel}>Category:</Text>
-                    <Text style={styles.caseDetailValue}>{activeCase.category}</Text>
-                  </View>
-                  
-                  <View style={styles.caseDetailRow}>
-                    <Ionicons name="time" size={16} color="#666" />
-                    <Text style={styles.caseDetailLabel}>Created:</Text>
-                    <Text style={styles.caseDetailValue}>
-                      {formatPhilippineDateTime(activeCase.created_at)}
-                    </Text>
-                  </View>
-                  
-                  {activeCase.office_name && (
-                    <View style={styles.caseDetailRow}>
-                      <Ionicons name="business" size={16} color="#666" />
-                      <Text style={styles.caseDetailLabel}>Assigned Office:</Text>
-                      <Text style={styles.caseDetailValue}>{activeCase.office_name}</Text>
-                    </View>
-                  )}
-                  
-                  {activeCase.description && (
-                    <View style={styles.caseDescriptionContainer}>
-                      <Text style={styles.caseDescriptionLabel}>Description:</Text>
-                      <Text style={styles.caseDescriptionText} numberOfLines={3}>
-                        {activeCase.description}
-                      </Text>
-                    </View>
-                  )}
-                  
-                  {activeCase.latitude && activeCase.longitude && (
-                    <View style={styles.caseDetailRow}>
-                      <Ionicons name="location" size={16} color="#666" />
-                      <Text style={styles.caseDetailLabel}>Location:</Text>
-                      <Text style={styles.caseDetailValue}>
-                        {Number(activeCase.latitude).toFixed(4)}, {Number(activeCase.longitude).toFixed(4)}
-                      </Text>
-                    </View>
-                  )}
-                </ScrollView>
-              )}
-              
-              <TouchableOpacity
-                style={styles.cancelReportButton}
-                onPress={handleCancelReport}
-                disabled={cancelling || countdown > 0}
-              >
-                <Ionicons name="close-circle" size={20} color="#FF3B30" />
-                <Text style={styles.cancelReportButtonText}>
-                  {countdown > 0 ? `Cancelling in ${countdown}s...` : cancelling ? 'Cancelling...' : 'Cancel Report'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.noActiveCaseContainer}>
-              <Ionicons name="checkmark-circle" size={48} color="#34C759" />
-              <Text style={styles.noActiveCaseText}>No Active Case</Text>
-              <Text style={styles.noActiveCaseSubtext}>You can send an SOS or submit a report</Text>
-            </View>
-          )}
+          <ActiveCaseCard
+            activeCase={activeCase}
+            isMinimized={isCaseMinimized}
+            onToggleMinimize={() => setIsCaseMinimized(!isCaseMinimized)}
+            onCancelReport={handleCancelReport}
+            cancelling={cancelling}
+            cancelCountdown={countdown}
+          />
         </ScrollView>
 
         {/* Floating Chat Head - quick access to chat for active case */}
-        {activeCase && (
-          <TouchableOpacity
-            style={styles.floatingChatHead}
-            activeOpacity={0.8}
-            onPress={() => {
-              router.push({
-                pathname: '/screens/ChatScreen',
-                params: {
-                  report_id: activeCase.report_id,
-                  office_name: (activeCase as any).office_name || 'Police Station',
-                },
-              } as any);
-            }}
-          >
-            <Ionicons name="chatbubbles" size={26} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
+        <FloatingChatButton activeCase={activeCase} />
 
         {/* Bottom Navigation */}
         <CustomTabBar />
 
-
-
         {/* Notification Detail Panel */}
-        <Modal
+        <NotificationDetailModal
           visible={selectedNotification !== null}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setSelectedNotification(null)}
-        >
-          {selectedNotification && (
-            <View style={styles.notificationDetailOverlay}>
-              <View style={styles.notificationDetailContainer}>
-                <View style={styles.notificationDetailHeader}>
-                  <Text style={styles.notificationDetailTitle}>Notification</Text>
-                  <TouchableOpacity
-                    onPress={() => setSelectedNotification(null)}
-                    style={styles.notificationDetailCloseButton}
-                  >
-                    <Ionicons name="close" size={24} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={styles.notificationDetailContent}>
-                  <View style={styles.notificationMessageContainer}>
-                    <Ionicons 
-                      name={
-                        selectedNotification.status === 'Resolved' ? 'checkmark-circle' :
-                        selectedNotification.status === 'Canceled' ? 'close-circle' :
-                        selectedNotification.status === 'Acknowledged' ? 'person-circle' :
-                        selectedNotification.status === 'En Route' ? 'car' :
-                        selectedNotification.status === 'On Scene' ? 'location' :
-                        'time'
-                      } 
-                      size={64} 
-                      color={
-                        selectedNotification.status === 'Resolved' ? '#34C759' :
-                        selectedNotification.status === 'Canceled' ? '#FF3B30' :
-                        selectedNotification.status === 'Acknowledged' ? '#FFCC00' :
-                        selectedNotification.status === 'En Route' ? '#007AFF' :
-                        selectedNotification.status === 'On Scene' ? '#34C759' :
-                        '#FF9500'
-                      } 
-                    />
-                    <Text style={styles.notificationMessageText}>
-                      {selectedNotification.status === 'Resolved' ? 'Your case is already resolved' :
-                       selectedNotification.status === 'Canceled' ? 'Your case has been cancelled' :
-                       selectedNotification.status === 'Acknowledged' ? 'Your case has been acknowledged' :
-                       selectedNotification.status === 'En Route' ? 'Help is on the way' :
-                       selectedNotification.status === 'On Scene' ? 'Officers are on scene' :
-                       'Your case is pending'}
-                    </Text>
-                    <Text style={styles.notificationMessageSubtext}>
-                      {selectedNotification.category}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-        </Modal>
+          notification={selectedNotification}
+          onClose={() => setSelectedNotification(null)}
+        />
 
         {/* Notification Modal */}
-        <Modal
+        <NotificationListModal
           visible={notificationModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setNotificationModalVisible(false)}
-        >
-          <View style={styles.notificationModalOverlay}>
-            <View style={styles.notificationModalContainer}>
-              <View style={styles.notificationModalHeader}>
-                <Text style={styles.notificationModalTitle}>Notifications</Text>
-                <TouchableOpacity
-                  onPress={() => setNotificationModalVisible(false)}
-                  style={styles.notificationModalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#666" />
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView style={styles.notificationModalContent}>
-                {notifications.length === 0 ? (
-                  <View style={styles.noNotificationsContainer}>
-                    <Ionicons name="notifications-off" size={48} color="#CCC" />
-                    <Text style={styles.noNotificationsText}>No notifications</Text>
-                    <Text style={styles.noNotificationsSubtext}>Case status updates will appear here</Text>
-                  </View>
-                ) : (
-                  notifications.map((notification) => (
-                    <TouchableOpacity
-                      key={notification.report_id}
-                      style={styles.notificationItem}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        setSelectedNotification(notification);
-                        setNotificationModalVisible(false);
-                      }}
-                    >
-                      <View style={[
-                        styles.notificationStatusIndicator,
-                        {
-                          backgroundColor: 
-                            notification.status === 'Resolved' ? '#34C759' :
-                            notification.status === 'Canceled' ? '#FF3B30' :
-                            notification.status === 'Acknowledged' ? '#FFCC00' :
-                            notification.status === 'En Route' ? '#007AFF' :
-                            notification.status === 'On Scene' ? '#34C759' :
-                            '#FF9500' // Pending - orange
-                        }
-                      ]} />
-                      <View style={styles.notificationItemContent}>
-                        <Text style={styles.notificationItemTitle}>
-                          {notification.status === 'Resolved' ? 'Case Resolved' :
-                           notification.status === 'Canceled' ? 'Case Canceled' :
-                           notification.status === 'Acknowledged' ? 'Case Acknowledged' :
-                           notification.status === 'En Route' ? 'Help En Route' :
-                           notification.status === 'On Scene' ? 'Officers On Scene' :
-                           'Case Pending'}
-                        </Text>
-                        <Text style={styles.notificationItemCategory}>{notification.category}</Text>
-                        <Text style={styles.notificationItemTime}>
-                          {formatPhilippineDateTime(notification.updated_at)}
-                        </Text>
-                      </View>
-                      <Ionicons 
-                        name={
-                          notification.status === 'Resolved' ? 'checkmark-circle' :
-                          notification.status === 'Canceled' ? 'close-circle' :
-                          notification.status === 'Acknowledged' ? 'person-circle' :
-                          notification.status === 'En Route' ? 'car' :
-                          notification.status === 'On Scene' ? 'location' :
-                          'time'
-                        } 
-                        size={24} 
-                        color={
-                          notification.status === 'Resolved' ? '#34C759' :
-                          notification.status === 'Canceled' ? '#FF3B30' :
-                          notification.status === 'Acknowledged' ? '#FFCC00' :
-                          notification.status === 'En Route' ? '#007AFF' :
-                          notification.status === 'On Scene' ? '#34C759' :
-                          '#FF9500'
-                        } 
-                      />
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+          notifications={notifications}
+          onClose={() => setNotificationModalVisible(false)}
+          onSelect={(notification) => {
+            setSelectedNotification(notification);
+            setNotificationModalVisible(false);
+          }}
+        />
       </View>
     </View>
   );
 };
 
 export default Home;
-

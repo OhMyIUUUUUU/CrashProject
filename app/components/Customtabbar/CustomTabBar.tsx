@@ -23,13 +23,21 @@ export default function CustomTabBar() {
   const router = useRouter();
   const segments = useSegments();
 
+  // 🟢 FIX: Define this FIRST so it can be used in useEffect below
+  const currentRoute = segments[segments.length - 1] || "Home";
+
   // State to manage positions (left, center, right)
-  // Initialize from persistent state
   const [positions, setPositions] = useState({
     left: persistentPositions.left,
     center: persistentPositions.center,
     right: persistentPositions.right,
   });
+
+  const allRoutes: Record<ScreenType, ScreenConfig> = {
+    Home: { name: "Home", path: "/screens/Home", icon: "home", segment: "Home" },
+    Report: { name: "Report", path: "/screens/Report", icon: "document-text", segment: "Report" },
+    Profile: { name: "Profile", path: "/screens/Profile", icon: "person", segment: "Profile" },
+  };
 
   // Sync state with persistent value on mount
   useEffect(() => {
@@ -40,20 +48,24 @@ export default function CustomTabBar() {
     });
   }, []);
 
-  // Auto-update positions when route changes to ensure current route is in center
+  // Update persistent state helper
+  const updatePositions = (newPositions: typeof positions) => {
+    persistentPositions = { ...newPositions };
+    setPositions(newPositions);
+  };
+
+  // Auto-update positions when route changes
   useEffect(() => {
     const currentScreen = currentRoute as ScreenType;
-    
+
     // Only update if current route is not already in center
     setPositions(prev => {
       if (prev.center === currentScreen) {
-        // Already in center, no change needed
         return prev;
       }
-      
-      // Find where the current screen is and swap it with center
+
       let newPositions = { ...prev };
-      
+
       if (prev.left === currentScreen) {
         newPositions = {
           ...prev,
@@ -63,7 +75,7 @@ export default function CustomTabBar() {
         updatePositions(newPositions);
         return newPositions;
       }
-      
+
       if (prev.right === currentScreen) {
         newPositions = {
           ...prev,
@@ -73,34 +85,17 @@ export default function CustomTabBar() {
         updatePositions(newPositions);
         return newPositions;
       }
-      
-      // Current screen not found in positions, return unchanged
+
       return prev;
     });
-  }, [currentRoute]);
+  }, [currentRoute]); // 🟢 Now this dependency is valid because currentRoute is defined above
 
-  // Update persistent state whenever positions change
-  const updatePositions = (newPositions: typeof positions) => {
-    persistentPositions = { ...newPositions };
-    setPositions(newPositions);
-  };
-
-  const allRoutes: Record<ScreenType, ScreenConfig> = {
-    Home: { name: "Home", path: "/screens/Home", icon: "home", segment: "Home" },
-    Report: { name: "Report", path: "/screens/Report", icon: "document-text", segment: "Report" },
-    Profile: { name: "Profile", path: "/screens/Profile", icon: "person", segment: "Profile" },
-  };
-
-  // Get current route name from segments
-  const currentRoute = segments[segments.length - 1] || "Home";
-
-  // Handle left tab click - swap left with center
+  // Handle left tab click
   const handleLeftClick = () => {
     const clickedScreen = positions.left;
     const targetPath = allRoutes[clickedScreen].path;
     const targetSegment = allRoutes[clickedScreen].segment;
-    
-    // Update positions first
+
     setPositions(prev => {
       const newPositions = {
         ...prev,
@@ -110,8 +105,7 @@ export default function CustomTabBar() {
       updatePositions(newPositions);
       return newPositions;
     });
-    
-    // Navigate after state update (outside of setState callback)
+
     if (currentRoute === targetSegment) {
       router.replace(targetPath as any);
     } else {
@@ -119,13 +113,12 @@ export default function CustomTabBar() {
     }
   };
 
-  // Handle right tab click - swap right with center
+  // Handle right tab click
   const handleRightClick = () => {
     const clickedScreen = positions.right;
     const targetPath = allRoutes[clickedScreen].path;
     const targetSegment = allRoutes[clickedScreen].segment;
-    
-    // Update positions first
+
     setPositions(prev => {
       const newPositions = {
         ...prev,
@@ -135,8 +128,7 @@ export default function CustomTabBar() {
       updatePositions(newPositions);
       return newPositions;
     });
-    
-    // Navigate after state update (outside of setState callback)
+
     if (currentRoute === targetSegment) {
       router.replace(targetPath as any);
     } else {
@@ -144,10 +136,9 @@ export default function CustomTabBar() {
     }
   };
 
-  // Handle center button click - find Home and swap with center (or do nothing if center is Home)
+  // Handle center button click
   const handleCenterClick = () => {
     setPositions(prev => {
-      // Find where Home is and swap it with center
       if (prev.left === "Home") {
         const newPositions: typeof prev = {
           ...prev,
@@ -157,7 +148,7 @@ export default function CustomTabBar() {
         updatePositions(newPositions);
         return newPositions;
       }
-      
+
       if (prev.right === "Home") {
         const newPositions: typeof prev = {
           ...prev,
@@ -167,14 +158,12 @@ export default function CustomTabBar() {
         updatePositions(newPositions);
         return newPositions;
       }
-      
-      // If center is already Home: NO RESET, NO CHANGE
+
       return prev;
     });
 
     const homePath = allRoutes["Home"].path;
-    
-    // Navigate to Home
+
     if (currentRoute === "Home") {
       router.replace(homePath as any);
     } else {
@@ -184,24 +173,20 @@ export default function CustomTabBar() {
 
   return (
     <View style={styles.wrapper}>
-      {/* Rounded background */}
       <View style={styles.tabBarBackground} />
 
-      {/* Floating Center Button - shows positions.center */}
       <View style={styles.floatingButtonContainer}>
-        {/* The main rounded rectangle part */}
         <View style={styles.baseShape} />
-        
-        {/* The circular button part that overlaps */}
+
         <TouchableOpacity
           onPress={handleCenterClick}
           style={styles.circularButton}
           activeOpacity={0.8}
         >
           <View style={styles.whiteCircle}>
-            <Ionicons 
-              name={allRoutes[positions.center].icon as any} 
-              size={20} 
+            <Ionicons
+              name={allRoutes[positions.center].icon as any}
+              size={20}
               color="#FF6B6B"
               style={styles.icon}
             />
@@ -209,9 +194,7 @@ export default function CustomTabBar() {
         </TouchableOpacity>
       </View>
 
-      {/* Side Tabs - Dynamic based on positions */}
       <View style={styles.rowTabs}>
-        {/* Left Tab */}
         <TouchableOpacity
           style={styles.tabButton}
           onPress={handleLeftClick}
@@ -224,7 +207,6 @@ export default function CustomTabBar() {
           />
         </TouchableOpacity>
 
-        {/* Right Tab */}
         <TouchableOpacity
           style={styles.tabButton}
           onPress={handleRightClick}
@@ -331,4 +313,3 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
   },
 });
-

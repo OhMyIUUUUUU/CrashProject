@@ -41,3 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Secrets
+google-services.json
+supabase/functions/send-push/service-account.json

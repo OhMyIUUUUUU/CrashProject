@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -79,16 +78,16 @@ const Report: React.FC = () => {
             });
             const latitude = currentLocation.coords.latitude;
             const longitude = currentLocation.coords.longitude;
-            
+
             // Reverse geocode to get full address
             if (latitude && longitude) {
               try {
                 // Fetch full address from Nominatim API directly to get complete display_name
                 const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&namedetails=1&accept-language=en,fil&extratags=1`;
-                
+
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000);
-                
+
                 const response = await fetch(url, {
                   headers: {
                     'User-Agent': 'AccessPoint-Mobile-App/1.0',
@@ -96,9 +95,9 @@ const Report: React.FC = () => {
                   },
                   signal: controller.signal,
                 });
-                
+
                 clearTimeout(timeoutId);
-                
+
                 if (response.ok) {
                   const data = await response.json();
                   // Use display_name for full address, fallback to geocodeResult
@@ -111,7 +110,7 @@ const Report: React.FC = () => {
                     if (geocodeResult.barangay) locationParts.push(geocodeResult.barangay);
                     if (geocodeResult.city) locationParts.push(geocodeResult.city);
                     if (geocodeResult.region) locationParts.push(geocodeResult.region);
-                    const locationAddress = locationParts.length > 0 
+                    const locationAddress = locationParts.length > 0
                       ? locationParts.join(', ')
                       : `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
                     setLocationText(locationAddress);
@@ -123,7 +122,7 @@ const Report: React.FC = () => {
                   if (geocodeResult.barangay) locationParts.push(geocodeResult.barangay);
                   if (geocodeResult.city) locationParts.push(geocodeResult.city);
                   if (geocodeResult.region) locationParts.push(geocodeResult.region);
-                  const locationAddress = locationParts.length > 0 
+                  const locationAddress = locationParts.length > 0
                     ? locationParts.join(', ')
                     : `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
                   setLocationText(locationAddress);
@@ -136,7 +135,7 @@ const Report: React.FC = () => {
           } catch (locationError: any) {
             // Location unavailable - use profile address as fallback
             console.warn('GPS location unavailable, using profile address:', locationError?.message);
-            
+
             // Try to get user profile address from Supabase
             try {
               const { data: { session } } = await supabase.auth.getSession();
@@ -146,7 +145,7 @@ const Report: React.FC = () => {
                   .select('barangay, city, region')
                   .eq('user_id', session.user.id)
                   .single();
-                
+
                 if (userData) {
                   const addressParts = [];
                   if (userData.barangay) addressParts.push(userData.barangay);
@@ -177,7 +176,7 @@ const Report: React.FC = () => {
                 .select('barangay, city, region')
                 .eq('user_id', session.user.id)
                 .single();
-              
+
               if (userData) {
                 const addressParts = [];
                 if (userData.barangay) addressParts.push(userData.barangay);
@@ -209,7 +208,7 @@ const Report: React.FC = () => {
               .select('barangay, city, region')
               .eq('user_id', session.user.id)
               .single();
-            
+
             if (userData) {
               const addressParts = [];
               if (userData.barangay) addressParts.push(userData.barangay);
@@ -297,8 +296,8 @@ const Report: React.FC = () => {
           'Media library permission is required to attach images/videos. Please enable it in your device settings.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Open Settings', 
+            {
+              text: 'Open Settings',
               onPress: () => {
                 // On some platforms, you might want to open settings
                 // For now, just show the alert
@@ -390,7 +389,7 @@ const Report: React.FC = () => {
     try {
       const bucketName = 'crash-media';
       console.log(`🗑️ Deleting file from bucket: ${filePath}`);
-      
+
       const { error } = await supabase.storage
         .from(bucketName)
         .remove([filePath]);
@@ -422,11 +421,11 @@ const Report: React.FC = () => {
 
       // Bucket name
       const bucketName = 'crash-media';
-      
+
       // Try to upload directly - if bucket exists, this will work
       // If it doesn't exist, we'll get a clear error message
       console.log(`📤 Attempting to upload to bucket: ${bucketName}`);
-      
+
       return await uploadToBucket(fileUri, reportId, index, bucketName, filePath, contentType, isVideo, senderId);
     } catch (error) {
       console.error('Error uploading attachment:', error);
@@ -456,8 +455,8 @@ const Report: React.FC = () => {
               // Get base64 string
               const base64String = reader.result as string;
               // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
-              const base64Data = base64String.includes(',') 
-                ? base64String.split(',')[1] 
+              const base64Data = base64String.includes(',')
+                ? base64String.split(',')[1]
                 : base64String;
 
               // Convert base64 to Uint8Array
@@ -484,7 +483,7 @@ const Report: React.FC = () => {
               // Upload to Supabase Storage using ArrayBuffer
               console.log(`📤 Uploading file to bucket '${bucketName}': ${filePath} (${byteArray.length} bytes)`);
               console.log(`👤 Uploading as user: ${session.user.email || session.user.id}`);
-              
+
               // Try to list buckets to verify, but don't block if it fails (permission issue)
               // The upload will fail with a clearer error if bucket doesn't exist
               const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
@@ -517,7 +516,7 @@ const Report: React.FC = () => {
                 console.error('Upload error details:', JSON.stringify(uploadError, null, 2));
                 console.error('Error name:', uploadError.name);
                 console.error('Error message:', uploadError.message);
-                
+
                 // More detailed error messages
                 let errorMessage = 'Unknown error occurred';
                 if (uploadError.message) {
@@ -525,19 +524,19 @@ const Report: React.FC = () => {
                 } else if (uploadError.name === 'StorageUnknownError') {
                   errorMessage = 'Storage service error. Please check:\n1. Bucket exists and is accessible\n2. RLS policies allow uploads\n3. File size is within limits\n4. Network connection is stable';
                 }
-                
+
                 // Check if it's a bucket not found error
-                if (uploadError.message?.includes('Bucket not found') || 
-                    uploadError.message?.includes('not found') ||
-                    (uploadError as any).statusCode === 404) {
+                if (uploadError.message?.includes('Bucket not found') ||
+                  uploadError.message?.includes('not found') ||
+                  (uploadError as any).statusCode === 404) {
                   Alert.alert(
                     'Bucket Not Found',
                     `The storage bucket "${bucketName}" was not found.\n\nPlease verify:\n1. The bucket name is exactly "${bucketName}"\n2. The bucket exists in your Supabase Storage\n3. The bucket is accessible`,
                     [{ text: 'OK' }]
                   );
                 } else if (uploadError.message?.includes('new row violates row-level security') ||
-                          uploadError.message?.includes('RLS') ||
-                          uploadError.message?.includes('permission denied')) {
+                  uploadError.message?.includes('RLS') ||
+                  uploadError.message?.includes('permission denied')) {
                   Alert.alert(
                     'Permission Denied',
                     `Upload failed due to permissions.\n\nPlease check:\n1. RLS policies allow INSERT for authenticated users\n2. Bucket is set to public or has proper policies\n3. You are logged in`,
@@ -636,7 +635,7 @@ const Report: React.FC = () => {
                     clearInterval(countdownIntervalRef.current);
                     countdownIntervalRef.current = null;
                   }
-                  
+
                   // Cancel the report
                   cancelReport(activeCase.report_id, activeCase).then((success) => {
                     setCancelling(false);
@@ -718,7 +717,7 @@ const Report: React.FC = () => {
           .select('user_id, first_name, last_name, barangay, city')
           .eq('user_id', authUserId)
           .single();
-        
+
         if (data && !error) {
           userInfo = data;
           reporterId = data.user_id;
@@ -732,7 +731,7 @@ const Report: React.FC = () => {
           .select('user_id, first_name, last_name, barangay, city')
           .eq('email', userEmail)
           .single();
-        
+
         if (data && !error) {
           userInfo = data;
           reporterId = data.user_id;
@@ -752,7 +751,7 @@ const Report: React.FC = () => {
       let longitude: number | null = null;
       let locationCity: string | null = null; // Only from GPS, no profile fallback
       let locationBarangay: string | null = null; // Only from GPS, no profile fallback
-      
+
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -761,15 +760,15 @@ const Report: React.FC = () => {
           });
           latitude = currentLocation.coords.latitude;
           longitude = currentLocation.coords.longitude;
-          
-           // Reverse geocode to get city and barangay from GPS coordinates ONLY
-           if (latitude && longitude) {
-             const geocodeResult = await reverseGeocode(latitude, longitude);
-             // Add "City" suffix if not already present
-             const cityName = geocodeResult.city || null;
-             locationCity = cityName ? (cityName.endsWith(' City') ? cityName : `${cityName} City`) : null;
-             locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
-           }
+
+          // Reverse geocode to get city and barangay from GPS coordinates ONLY
+          if (latitude && longitude) {
+            const geocodeResult = await reverseGeocode(latitude, longitude);
+            // Add "City" suffix if not already present
+            const cityName = geocodeResult.city || null;
+            locationCity = cityName ? (cityName.endsWith(' City') ? cityName : `${cityName} City`) : null;
+            locationBarangay = geocodeResult.barangay || null; // Only from GPS, no profile fallback
+          }
         } else {
           console.warn('Location permission not granted. Report will be submitted without GPS coordinates and location.');
         }
@@ -822,12 +821,12 @@ const Report: React.FC = () => {
           console.log(`📎 Processing attachment ${index + 1}/${attachments.length}: ${attachment.substring(0, 50)}...`);
           return uploadAttachment(attachment, reportId, index, reporterId);
         });
-        
+
         const uploadResults = await Promise.all(uploadPromises);
         const successCount = uploadResults.filter(result => result === true).length;
-        
+
         console.log(`📊 Upload results: ${successCount} successful out of ${attachments.length} total`);
-        
+
         if (successCount < attachments.length) {
           console.warn(`⚠️ Only ${successCount} out of ${attachments.length} attachments uploaded successfully`);
           Alert.alert(
@@ -840,11 +839,11 @@ const Report: React.FC = () => {
       } else {
         console.log('ℹ️ No attachments to upload');
       }
-      
+
       // 5. Wait a moment for database to process, then refresh active case
       console.log('⏳ Waiting for database to process...');
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-      
+
       // Refresh active case after submission (wait for it to complete)
       console.log('🔄 Refreshing active case after report submission...');
       await checkActiveCase();
@@ -890,29 +889,7 @@ const Report: React.FC = () => {
     >
       <View style={styles.container}>
         {/* Header with Glassmorphism Blur */}
-        <View style={styles.reportHeader}>
-          <BlurView 
-            intensity={100} 
-            tint="light" 
-            style={styles.reportHeaderBlur}
-          >
-            <View style={styles.reportHeaderContent}>
-              <View style={styles.reportHeaderIconContainer}>
-                <BlurView 
-                  intensity={80} 
-                  tint="light" 
-                  style={styles.reportHeaderIconBlur}
-                >
-                  <Ionicons name="document-text" size={28} color="#FF6B6B" />
-                </BlurView>
-              </View>
-              <View style={styles.reportHeaderTextContainer}>
-                <Text style={styles.reportHeaderTitle}>Submit Report</Text>
-                <Text style={styles.reportHeaderSubtitle}>Report an incident or emergency</Text>
-              </View>
-            </View>
-          </BlurView>
-        </View>
+
 
         <ScrollView
           style={styles.scrollView}
@@ -1139,10 +1116,10 @@ const Report: React.FC = () => {
                 {submitting ? 'Submitting...' : 'Submit'}
               </Text>
               <View style={styles.submitButtonIcon}>
-                <Ionicons 
-                  name="checkmark" 
-                  size={20} 
-                  color="#FF5252" 
+                <Ionicons
+                  name="checkmark"
+                  size={20}
+                  color="#FF5252"
                 />
               </View>
             </TouchableOpacity>

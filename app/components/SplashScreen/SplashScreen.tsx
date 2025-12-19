@@ -19,15 +19,15 @@ const SplashScreen: React.FC = () => {
       try {
         // Wait for app to be ready
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         setStatus('Checking internet connection...');
-        
+
         // Check internet connectivity with timeout
         const netInfoState = await Promise.race([
           NetInfo.fetch(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Network timeout')), 5000))
         ]) as any;
-        
+
         const isConnected = netInfoState?.isConnected ?? true; // Default to online if check fails
 
         if (!isConnected) {
@@ -44,11 +44,11 @@ const SplashScreen: React.FC = () => {
         // If online, check authentication status
         setStatus('Checking authentication...');
         await loadUser();
-        
+
         // Check authentication directly from storage
         const { StorageService } = await import('../../utils/storage');
         const loggedIn = await StorageService.isLoggedIn();
-        
+
         // Navigate based on authentication
         if (loggedIn) {
           setStatus('Welcome back!');
@@ -62,7 +62,7 @@ const SplashScreen: React.FC = () => {
           await new Promise(resolve => setTimeout(resolve, 500));
           if (!hasNavigated.current) {
             hasNavigated.current = true;
-            router.replace('/screens/AccessPoint/components/Login/Login');
+            router.replace('/components/Login/Login');
           }
         }
       } catch (error) {
@@ -87,13 +87,13 @@ const SplashScreen: React.FC = () => {
         </View>
         <Text style={styles.title}>AccessPoint</Text>
         <Text style={styles.subtitle}>Emergency Response System</Text>
-        
+
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color="#ff6b6b" />
           <Text style={styles.status}>{status}</Text>
         </View>
       </View>
-      
+
       <View style={styles.footer}>
         <Text style={styles.footerText}>Your Safety, Our Priority</Text>
         <Text style={styles.version}>Version 1.0.0</Text>
