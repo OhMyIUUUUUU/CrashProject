@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -103,6 +104,24 @@ const ChatScreen: React.FC = () => {
     }
   };
 
+
+  const playReceiveSound = async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../assets/bubble_pop.mp3')
+      );
+      await sound.playAsync();
+      // Unload from memory when finished
+      sound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Error playing sound:', error);
+    }
+  };
+
   const subscribeToMessages = () => {
     if (!report_id) return;
 
@@ -124,6 +143,11 @@ const ChatScreen: React.FC = () => {
         async (payload) => {
           const newMessage = payload.new as Message;
 
+          // Play sound if message is from others (not current user)
+          if (newMessage.sender_type !== 'user') {
+            playReceiveSound();
+          }
+
           // Append new message to state instead of reloading all
           setMessages((prev) => {
             // Check if message already exists (avoid duplicates)
@@ -131,8 +155,6 @@ const ChatScreen: React.FC = () => {
             if (exists) return prev;
             return [...prev, newMessage];
           });
-
-          // Message received and added to state
         }
       )
       .subscribe((status) => {

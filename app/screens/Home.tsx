@@ -315,7 +315,7 @@ const Home: React.FC = () => {
         reverseGeocode(latitude, longitude).then(async (res) => {
           if (res.city || res.barangay) {
             const updateData: any = {};
-            if (res.city) updateData.location_city = res.city;
+            if (res.city) updateData.location_city = `${res.city} City`;
             if (res.barangay) updateData.location_barangay = res.barangay;
 
             const fullDesc = description.replace(

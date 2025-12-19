@@ -42,8 +42,8 @@ export const showMessageNotification = async (title: string, body: string, repor
   await notifee.requestPermission();
 
   const channelId = await notifee.createChannel({
-    id: 'messages_v2', // Changed ID to force update
-    name: 'Messages with Sound',
+    id: 'messages_v3', // Bumped ID to force config update
+    name: 'Messages with Sound v3',
     importance: AndroidImportance.HIGH,
     sound: 'alert_sound', // Matches filename in res/raw (without extension)
   });

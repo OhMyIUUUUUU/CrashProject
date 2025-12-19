@@ -104,6 +104,7 @@ function RootLayoutContent() {
   const networkUnsubscribe = useRef<(() => void) | null>(null);
   const isNavigatingToOffline = useRef(false);
   const messageChannelRef = useRef<any>(null);
+  const statusChannelRef = useRef<any>(null);
 
 
   useEffect(() => {
@@ -432,6 +433,62 @@ function RootLayoutContent() {
       });
     }, 3000);
 
+    // Set up global listener for report status changes (Status Updates)
+    const setupStatusNotifications = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) return;
+
+        // Remove existing channel if any
+        if (statusChannelRef.current) {
+          supabase.removeChannel(statusChannelRef.current);
+        }
+
+        // Subscribe to report updates for the current user
+        statusChannelRef.current = supabase
+          .channel('global-status-updates')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'tbl_reports',
+              filter: `reporter_id=eq.${session.user.id}`, // Filter server-side for efficiency
+            },
+            async (payload) => {
+              try {
+                const newReport = payload.new as any;
+                const oldReport = payload.old as any;
+
+                // Check if status has changed
+                if (newReport.status && newReport.status !== oldReport.status) {
+                  console.log('📝 Status changed:', newReport.status);
+
+                  // Trigger notification with sound
+                  await showMessageNotification(
+                    'Update on your Report',
+                    `Your Request is now ${newReport.status}`,
+                    newReport.report_id
+                  );
+                }
+              } catch (error) {
+                console.error('Error processing status update:', error);
+              }
+            }
+          )
+          .subscribe();
+
+        console.log('✅ Global status listener set up');
+      } catch (error) {
+        console.error('Error setting up status listener:', error);
+      }
+    };
+
+    // Initialize status listener
+    setTimeout(() => {
+      setupStatusNotifications();
+    }, 2500);
+
     // Cleanup listeners on unmount
     return () => {
       if (networkUnsubscribe.current) {
@@ -442,6 +499,11 @@ function RootLayoutContent() {
       if (messageChannelRef.current) {
         supabase.removeChannel(messageChannelRef.current);
         messageChannelRef.current = null;
+      }
+      // Cleanup status listener
+      if (statusChannelRef.current) {
+        supabase.removeChannel(statusChannelRef.current);
+        statusChannelRef.current = null;
       }
       // Cleanup foreground location service
       foregroundLocationService.cleanup().catch((error) => {
@@ -475,11 +537,11 @@ function RootLayoutContent() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="components/Login/Login"
+          name="screens/Login"
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="components/Register/Register"
+          name="screens/SignUp"
           options={{ headerShown: false }}
         />
         <Stack.Screen

@@ -32,10 +32,10 @@ const navigateAfterSessionCheck = async (router: any) => {
   try {
     // Small delay to ensure session is fully established
     await new Promise(resolve => setTimeout(resolve, 300));
-    
+
     // Check internet connection first
     const isConnected = await hasInternetConnection();
-    
+
     if (!isConnected) {
       console.log('📡 No internet - navigating to Home');
       router.replace('/screens/Home');
@@ -46,14 +46,14 @@ const navigateAfterSessionCheck = async (router: any) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       console.log('🔐 No session found - navigating to Login');
-      router.replace('/components/Login/Login');
+      router.replace('/screens/Login' as any);
       return;
     }
 
     // Check for active report
     console.log('🔍 Checking for active reports...');
     const activeReport = await checkActiveReport();
-    
+
     if (activeReport) {
       console.log(`🎯 Session restored: Navigating to Report screen for active case ${activeReport.report_id}`);
       router.replace('/screens/Report');
@@ -78,11 +78,11 @@ export default function Index() {
         await loadUser()
 
         const { data: { session }, error } = await supabase.auth.getSession();
-        
+
         if (session && !error) {
           await navigateAfterSessionCheck(router);
         } else {
-          router.replace('/components/Login/Login')
+          router.replace('/screens/Login' as any)
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -92,10 +92,10 @@ export default function Index() {
           if (session) {
             await navigateAfterSessionCheck(router);
           } else {
-            router.replace('/components/Login/Login')
+            router.replace('/screens/Login' as any);
           }
         } catch (fallbackError) {
-          router.replace('/components/Login/Login')
+          router.replace('/screens/Login' as any)
         }
       }
     }
@@ -109,7 +109,7 @@ export default function Index() {
           await navigateAfterSessionCheck(router);
         } else {
           // If we are signed out, go to login
-          router.replace('/components/Login/Login')
+          router.replace('/screens/Login' as any)
         }
       } catch (error) {
         console.error('Error in auth state change handler:', error);
