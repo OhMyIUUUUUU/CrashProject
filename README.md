@@ -1,4 +1,4 @@
-# AccessPoint (CrashProject)
+# CRASH (Crime Response & Alert System Hub )
 
 AccessPoint is a mobile application designed to facilitate crash reporting and emergency assistance. It allows users to report incidents, track cases, receive notifications, and communicate/chat regarding their status.
 
